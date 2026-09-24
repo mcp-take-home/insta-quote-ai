@@ -57,6 +57,17 @@ export function documentTotalContradicts(total: SourcedNumber, items: ExtractedI
   return scopeKnown && complete && Math.abs(items.reduce((sum, item) => sum + item.lineTotal.value, 0) - total.value) > 0.010001;
 }
 
+export function multiPageTotalRefusal(total: SourcedNumber, pageCount: number): Refusal | undefined {
+  if (pageCount <= 1) return;
+  return {
+    code: "UNVERIFIABLE_VALUE",
+    message: "This stated total cannot be reconciled because the document spans multiple pages and its page scope is unclear.",
+    page: total.evidence.page,
+    sourceText: total.evidence.sourceText,
+    contextText: total.evidence.contextText,
+  };
+}
+
 export function classifyRows(rows: PdfRow[]): Classification {
   const header = findHeader(rows);
   if (!header) {
@@ -164,6 +175,11 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
   for (const note of palletNotes) refusals.push({ code: "CONFLICTING_VALUES", message: "The pallet counts in the depot and site notes do not agree; please check the delivery record.", page: note.pageNumber, sourceText: `${note.depot}; ${note.site}` });
 
   for (const documentTotal of totals) {
+    const multiPageRefusal = multiPageTotalRefusal(documentTotal.value, pages.length);
+    if (multiPageRefusal) {
+      refusals.push(multiPageRefusal);
+      continue;
+    }
     if (documentTotalContradicts(documentTotal.value, documentTotal.items, pages.length === 1, documentTotal.complete)) {
       refusals.push({ code: "ARITHMETIC_CONTRADICTION", message: "The stated document total does not match the sum of the verified line totals.", page: documentTotal.value.evidence.page, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
       break;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyRows, documentTotalContradicts, extractDocument } from "./extract";
+import { classifyRows, documentTotalContradicts, extractDocument, multiPageTotalRefusal } from "./extract";
 import type { PdfRow } from "./pdf";
 
 function row(pageNumber: number, y: number, cells: Array<[number, string]>): PdfRow {
@@ -81,6 +81,15 @@ describe("classifyRows refusal boundary", () => {
     expect(documentTotalContradicts(stated, [item], false, true)).toBe(false);
     expect(documentTotalContradicts(stated, [item], true, false)).toBe(false);
     expect(documentTotalContradicts(stated, [item], true, true)).toBe(true);
+  });
+
+  test("explains why a multi-page stated total cannot be reconciled", () => {
+    const total = { value: 100, evidence: { page: 3, sourceText: "$100.00", contextText: "Total: $100.00" } };
+    const refusal = multiPageTotalRefusal(total, 3);
+    expect(refusal?.code).toBe("UNVERIFIABLE_VALUE");
+    expect(refusal?.message).toMatch(/spans multiple pages/i);
+    expect(refusal?.page).toBe(3);
+    expect(multiPageTotalRefusal(total, 1)).toBeUndefined();
   });
 });
 
