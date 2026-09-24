@@ -98,12 +98,16 @@ describe("classifyRows refusal boundary", () => {
 
 test("extracts a disclaimer only when explicitly labeled", () => {
   const metadata = extractMetadata([{ pageNumber: 1, rows: [
-    row(1, 100, [[0, "Acme Ltd"]]),
-    row(1, 80, [[0, "Packing List"]]),
-    row(1, 60, [[0, "Note: count checked on arrival."]]),
-    row(1, 40, [[0, "Disclaimer: Quantities subject to final verification."]]),
+    row(1, 100, [[0, "-----------"]]),
+    row(1, 80, [[0, "Acme Ltd"]]),
+    row(1, 60, [[0, "-----------"]]),
+    row(1, 40, [[0, "Packing List"]]),
+    row(1, 20, [[0, "Note: count checked on arrival."]]),
+    row(1, 0, [[0, "Disclaimer: Quantities subject to final verification."]]),
   ] }]);
-  expect(metadata.disclaimer).toMatchObject({ value: "Quantities subject to final verification.", evidence: { page: 1, line: 4, sourceText: "Disclaimer: Quantities subject to final verification." } });
+  expect(metadata.companyName?.evidence.line).toBe(2);
+  expect(metadata.documentType?.evidence.line).toBe(4);
+  expect(metadata.disclaimer).toMatchObject({ value: "Quantities subject to final verification.", evidence: { page: 1, line: 6, sourceText: "Disclaimer: Quantities subject to final verification." } });
 });
 
 const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];

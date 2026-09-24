@@ -15,12 +15,15 @@ const labels: Array<[Column, RegExp]> = [
 
 function clean(token: PdfTextItem): string { return token.text.trim(); }
 function context(row: PdfRow): string { return row.tokens.map(clean).filter(Boolean).join(" "); }
+function contentRows(rows: PdfRow[]): PdfRow[] {
+  return rows.map((row) => ({ ...row, tokens: row.tokens.filter((token) => !clean(token).startsWith("-----------")) })).filter((row) => row.tokens.length > 0);
+}
 function rowEvidence(row: PdfRow, sourceText = context(row)): Evidence { return { page: row.pageNumber, line: row.lineNumber, sourceText }; }
 function sourcedRow(row: PdfRow, value: string): SourcedText { return { value, evidence: rowEvidence(row) }; }
 
 export function extractMetadata(pages: Array<{ pageNumber: number; rows: PdfRow[] }>): Metadata {
   const metadata: Metadata = {};
-  const firstPage = pages.find((page) => page.pageNumber === 1)?.rows ?? [];
+  const firstPage = contentRows(pages.find((page) => page.pageNumber === 1)?.rows ?? []);
   const firstRow = firstPage[0];
   const first = firstRow ? context(firstRow) : "";
   if (firstRow && /^(?:company\s*:\s*.+|.+\b(?:ltd\.?|limited|pty\.?|inc\.?|corp\.?))$/i.test(first)) {
@@ -32,7 +35,7 @@ export function extractMetadata(pages: Array<{ pageNumber: number; rows: PdfRow[
     if (/^(?:packing\s+list|invoice|delivery\s+docket|multi-site\s+delivery\s+run\b)/i.test(value)) metadata.documentType = sourcedRow(second, value);
   }
 
-  for (const { rows } of pages) for (const row of rows) {
+  for (const { rows } of pages) for (const row of contentRows(rows)) {
     const text = context(row);
     const labeled: Array<[keyof Metadata, RegExp]> = [
       ["documentNumber", /^document\s*(?:no\.?|number)\s*[:#]\s*(.+)$/i],
@@ -187,7 +190,11 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
       refusals.push({ code: "UNREADABLE_CONTENT", message: "This page has no readable text, so its contents could not be checked.", page: page.pageNumber });
       continue;
     }
-    const rows = groupIntoRows(page.pageNumber, printable);
+    const rows = contentRows(groupIntoRows(page.pageNumber, printable));
+    if (rows.length === 0) {
+      refusals.push({ code: "UNREADABLE_CONTENT", message: "This page has no readable text, so its contents could not be checked.", page: page.pageNumber });
+      continue;
+    }
     metadataPages.push({ pageNumber: page.pageNumber, rows });
     const text = rows.map(context).join(" ");
     readablePageText.push({ pageNumber: page.pageNumber, text });
