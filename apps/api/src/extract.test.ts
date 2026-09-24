@@ -5,6 +5,7 @@ import type { PdfRow } from "./pdf";
 function row(pageNumber: number, y: number, cells: Array<[number, string]>): PdfRow {
   return {
     pageNumber,
+    lineNumber: Math.round((100 - y) / 20) + 1,
     y,
     tokens: cells.map(([x, text]) => ({ text, x, y, width: text.length * 5, height: 10 })),
   };
@@ -32,6 +33,8 @@ describe("classifyRows refusal boundary", () => {
     const sourced = classifyRows(fixture({ qty: "2", price: "$5.00", total: "$10.00" }));
     expect(sourced.items[0]?.quantity.evidence.sourceText).toBe("2");
     expect(sourced.items[0]?.quantity.evidence.page).toBe(2);
+    expect(sourced.items[0]?.quantity.evidence.line).toBe(2);
+    expect(sourced.items[0]?.evidence).toMatchObject({ page: 2, line: 2, sourceText: "Timber" });
     expect(classifyRows(fixture({ qty: "2", price: "$5.00 approx", total: "$10.00" })).refusals[0]?.code).toBe("INVALID_UNIT_PRICE");
     const contradiction = classifyRows(fixture({ qty: "2", price: "$5.00", total: "$9.00" }));
     expect(contradiction.refusals[0]?.code).toBe("ARITHMETIC_CONTRADICTION");
@@ -100,6 +103,15 @@ const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(
 test.skipIf(!sampleDataAvailable)("extractDocument keeps good pages and reports sample document contradictions", async () => {
   const result = await extractDocument(await sample("KBS-10270").arrayBuffer());
   expect(result.items).toHaveLength(4);
+  expect(result.metadata).toMatchObject({
+    companyName: { value: "Kowhai Building Supplies Ltd", evidence: { page: 1, line: 1 } },
+    documentType: { value: "Packing List", evidence: { page: 1, line: 2 } },
+    documentNumber: { value: "KBS-10270", evidence: { page: 1, line: 3 } },
+    deliveredTo: { value: "Site 6, Matai Grove", evidence: { page: 1, line: 5 } },
+    orderedBy: { value: "S. Prasad", evidence: { page: 1, line: 6 } },
+    disclaimer: { value: "Freight and handling included where applicable.", evidence: { page: 1, line: 14 } },
+  });
+  expect(result.items.every((item) => item.evidence?.line && item.quantity.evidence.line && item.unitPrice.evidence.line && item.lineTotal.evidence.line)).toBe(true);
   expect(result.refusals.some((refusal) => refusal.code === "ARITHMETIC_CONTRADICTION")).toBe(true);
 
   const unreadable = await extractDocument(await sample("KBS-10241").arrayBuffer());
@@ -110,13 +122,18 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps good pages and reports 
   const noTotals = await extractDocument(await sample("KBS-10255").arrayBuffer());
   expect(noTotals.items).toHaveLength(0);
   expect(noTotals.refusals.filter((refusal) => refusal.code === "MISSING_LINE_TOTAL")).toHaveLength(4);
+  expect(noTotals.refusals.filter((refusal) => refusal.code === "MISSING_LINE_TOTAL").every((refusal) => refusal.line !== undefined)).toBe(true);
 
   const palletConflict = await extractDocument(await sample("KBS-10262").arrayBuffer());
   expect(palletConflict.items).toHaveLength(3);
-  expect(palletConflict.refusals.some((refusal) => refusal.code === "CONFLICTING_VALUES")).toBe(true);
+  expect(palletConflict.refusals.find((refusal) => refusal.code === "CONFLICTING_VALUES")).toMatchObject({ page: 1, lines: [7, 13] });
 
   const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
   expect(deliveryRun.items).toHaveLength(9);
+  expect(deliveryRun.metadata).toMatchObject({ documentType: { value: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave", evidence: { page: 1, line: 2 } } });
+  expect(deliveryRun.metadata.deliveredTo).toBeUndefined();
+  expect(deliveryRun.metadata.orderedBy).toBeUndefined();
+  expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNVERIFIABLE_VALUE").every((refusal) => refusal.line === 2)).toBe(true);
   expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNREADABLE_CONTENT")).toHaveLength(1);
   expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNVERIFIABLE_VALUE")).toHaveLength(4);
 });

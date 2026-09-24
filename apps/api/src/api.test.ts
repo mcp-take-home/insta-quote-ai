@@ -9,6 +9,7 @@ import { processNextJob, type DocumentProcessor } from "./worker";
 
 const fixture = new Uint8Array([...new TextEncoder().encode("%PDF-1.4\nfixture")]);
 const result = {
+  metadata: {},
   items: [{
     description: "Timber",
     quantity: { value: 2, evidence: { page: 1, sourceText: "2" } },
@@ -52,7 +53,7 @@ describe("document API", () => {
     expect(await (await app.request(`/api/docs/${queued.id}`)).json()).toEqual(queued);
   });
 
-  test("processes outside the request and persists completed items and refusals", async () => {
+  test("processes outside the request and persists completed items, refusals, and metadata", async () => {
     const response = await upload();
     const { id } = await response.json() as { id: string };
     let release!: (value: typeof result) => void;
@@ -110,6 +111,14 @@ describe("document API", () => {
     expect(database.sqlite.query<{ status: string }, [string]>("SELECT status FROM documents WHERE id = ?").get(id)?.status).toBe("failed");
   });
 
+  test("reads completed results saved before metadata and line evidence existed", async () => {
+    const response = await upload();
+    const { id } = await response.json() as { id: string };
+    const legacy = { items: [{ description: "Timber", quantity: { value: 2, evidence: { page: 1, sourceText: "2" } }, unitPrice: { value: 10, evidence: { page: 1, sourceText: "$10.00" } }, lineTotal: { value: 20, evidence: { page: 1, sourceText: "$20.00" } } }], refusals: [] };
+    database.sqlite.query("UPDATE documents SET status = 'completed', result_json = ? WHERE id = ?").run(JSON.stringify(legacy), id);
+    expect(await (await app.request(`/api/docs/${id}`)).json()).toEqual({ id, status: "completed", ...legacy });
+  });
+
   test("requeues interrupted processing documents on restart", async () => {
     const response = await upload();
     const { id } = await response.json() as { id: string };
@@ -129,7 +138,16 @@ describe("document API", () => {
     expect(completed.status).toBe("completed");
     if (completed.status !== "completed") throw new Error("Expected a completed document");
     expect(completed.items.length).toBeGreaterThan(0);
-    expect(completed.items.every((item) => item.quantity.evidence.page > 0 && item.unitPrice.evidence.sourceText && item.lineTotal.evidence.sourceText)).toBe(true);
+    expect(completed.items.every((item) => item.evidence?.line && item.quantity.evidence.line && item.unitPrice.evidence.line && item.lineTotal.evidence.line)).toBe(true);
+    expect(completed.metadata?.companyName?.value).toBe("Kowhai Building Supplies Ltd");
+    expect(completed.metadata?.companyName?.evidence).toMatchObject({ page: 1, line: 1, sourceText: "Kowhai Building Supplies Ltd" });
+    expect(completed.metadata?.documentType?.value).toBe("Packing List");
+    expect(completed.metadata?.documentNumber?.value).toBe("KBS-10270");
+    expect(completed.metadata?.deliveredTo?.value).toBe("Site 6, Matai Grove");
+    expect(completed.metadata?.orderedBy?.value).toBe("S. Prasad");
+    expect(completed.metadata?.disclaimer?.value).toBe("Freight and handling included where applicable.");
+    expect(completed.metadata?.disclaimer?.evidence.line).toBe(14);
+    expect(completed.refusals.every((refusal) => refusal.page === undefined || refusal.line !== undefined || refusal.code === "UNREADABLE_CONTENT")).toBe(true);
     expect(completed.refusals.length).toBeGreaterThan(0);
   });
 });

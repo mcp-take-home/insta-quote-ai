@@ -1,8 +1,9 @@
-import type { ExtractedItem, Refusal, SourcedNumber } from "@insta-quote/shared";
+import type { Evidence, ExtractedItem, Refusal, SourcedNumber, SourcedText } from "@insta-quote/shared";
 import { extractPdfPages, groupIntoRows, type PdfRow, type PdfTextItem } from "./pdf";
 
 type Column = "item" | "description" | "quantity" | "unit" | "unitPrice" | "lineTotal" | "weight";
 type Header = { y: number; starts: Partial<Record<Column, number>>; hasLineTotal: boolean };
+type Metadata = Partial<Record<"companyName" | "documentType" | "documentNumber" | "deliveredTo" | "orderedBy" | "disclaimer", SourcedText>>;
 type Classification = { items: ExtractedItem[]; refusals: Refusal[]; total?: SourcedNumber };
 type PageTotal = { value: SourcedNumber; items: ExtractedItem[]; complete: boolean };
 
@@ -14,6 +15,51 @@ const labels: Array<[Column, RegExp]> = [
 
 function clean(token: PdfTextItem): string { return token.text.trim(); }
 function context(row: PdfRow): string { return row.tokens.map(clean).filter(Boolean).join(" "); }
+function rowEvidence(row: PdfRow, sourceText = context(row)): Evidence { return { page: row.pageNumber, line: row.lineNumber, sourceText }; }
+function sourcedRow(row: PdfRow, value: string): SourcedText { return { value, evidence: rowEvidence(row) }; }
+
+function extractMetadata(pages: Array<{ pageNumber: number; rows: PdfRow[] }>): Metadata {
+  const metadata: Metadata = {};
+  const firstPage = pages.find((page) => page.pageNumber === 1)?.rows ?? [];
+  const firstRow = firstPage[0];
+  const first = firstRow ? context(firstRow) : "";
+  if (firstRow && /^(?:company\s*:\s*.+|.+\b(?:ltd\.?|limited|pty\.?|inc\.?|corp\.?))$/i.test(first)) {
+    metadata.companyName = sourcedRow(firstRow, first.replace(/^company\s*:\s*/i, ""));
+  }
+  const second = firstPage[1];
+  if (second) {
+    const value = context(second);
+    if (/^(?:packing\s+list|invoice|delivery\s+docket|multi-site\s+delivery\s+run\b)/i.test(value)) metadata.documentType = sourcedRow(second, value);
+  }
+
+  for (const { rows } of pages) for (const row of rows) {
+    const text = context(row);
+    const labeled: Array<[keyof Metadata, RegExp]> = [
+      ["documentNumber", /^document\s*(?:no\.?|number)\s*[:#]\s*(.+)$/i],
+      ["deliveredTo", /^delivered\s+to\s*:\s*(.+)$/i],
+      ["orderedBy", /^ordered\s+by\s*:\s*(.+)$/i],
+    ];
+    for (const [key, pattern] of labeled) {
+      const match = text.match(pattern);
+      if (!metadata[key] && match?.[1]?.trim()) metadata[key] = sourcedRow(row, match[1].trim());
+    }
+    const note = text.match(/^(?:disclaimer|note)\s*:\s*(.+)$/i);
+    if (!metadata.disclaimer && note?.[1]?.trim() && !/^driver\s+notes?\b/i.test(text)) metadata.disclaimer = sourcedRow(row, note[1].trim());
+  }
+
+  if (!metadata.disclaimer) for (const { rows } of pages) {
+    const total = rows.findIndex((row) => /^total\s*:/i.test(context(row)));
+    const last = rows.at(-1);
+    if (total >= 0 && last && last.lineNumber > (rows[total]?.lineNumber ?? Infinity)) {
+      const text = context(last);
+      if (text.length > 15 && /[.!?]$/.test(text) && !/^(?:driver\s+notes?|summary|total\b|page\s+\d)/i.test(text)) {
+        metadata.disclaimer = sourcedRow(last, text);
+        break;
+      }
+    }
+  }
+  return metadata;
+}
 
 function findHeader(rows: PdfRow[]): Header | undefined {
   for (const row of rows) {
@@ -46,11 +92,11 @@ function parseNumber(token: PdfTextItem | undefined, kind: "quantity" | "money",
   const numericText = kind === "quantity" ? sourceText : sourceText.replace(/^(?:NZ\s*)?\$?\s*/i, "").replace(/\s*\/\s*[a-z]+$/i, "");
   const value = Number(numericText.replaceAll(",", ""));
   if (!Number.isFinite(value) || value < 0) return;
-  return { value, evidence: { page, sourceText: token.text, contextText: context(row) } };
+  return { value, evidence: { ...rowEvidence(row, token.text), contextText: context(row) } };
 }
 
 function refusal(code: string, message: string, row: PdfRow): Refusal {
-  return { code, message, page: row.pageNumber, sourceText: context(row) };
+  return { code, message, page: row.pageNumber, line: row.lineNumber, sourceText: context(row) };
 }
 
 export function documentTotalContradicts(total: SourcedNumber, items: ExtractedItem[], scopeKnown: boolean, complete: boolean): boolean {
@@ -63,6 +109,7 @@ export function multiPageTotalRefusal(total: SourcedNumber, pageCount: number): 
     code: "UNVERIFIABLE_VALUE",
     message: "This stated total cannot be reconciled because the document spans multiple pages and its page scope is unclear.",
     page: total.evidence.page,
+    line: total.evidence.line,
     sourceText: total.evidence.sourceText,
     contextText: total.evidence.contextText,
   };
@@ -130,27 +177,29 @@ export function classifyRows(rows: PdfRow[]): Classification {
       fail("ARITHMETIC_CONTRADICTION", "The quantity and unit price do not match the line total shown in the document.");
       continue;
     }
-    items.push({ description, quantity, unitPrice, lineTotal });
+    items.push({ description, evidence: { ...rowEvidence(row, description), contextText: context(row) }, quantity, unitPrice, lineTotal });
   }
   return { items, refusals, ...(total ? { total } : {}) };
 }
 
 const excludedPage = /\b(summary|returns? note|credit adjustment|signed acceptance|acceptance)\b/i;
 
-export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: ExtractedItem[]; refusals: Refusal[] }> {
+export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: ExtractedItem[]; refusals: Refusal[]; metadata: Metadata }> {
   const pages = await extractPdfPages(buffer);
   const items: ExtractedItem[] = [];
   const refusals: Refusal[] = [];
   const totals: PageTotal[] = [];
   const readablePageText: Array<{ pageNumber: number; text: string }> = [];
+  const metadataPages: Array<{ pageNumber: number; rows: PdfRow[] }> = [];
 
   for (const page of pages) {
-    const printable = page.items.filter((token) => clean(token) !== "" && !clean(token).startsWith("-----------"));
+    const printable = page.items.filter((token) => clean(token) !== "");
     if (page.error || printable.length === 0) {
       refusals.push({ code: "UNREADABLE_CONTENT", message: "This page has no readable text, so its contents could not be checked.", page: page.pageNumber });
       continue;
     }
     const rows = groupIntoRows(page.pageNumber, printable);
+    metadataPages.push({ pageNumber: page.pageNumber, rows });
     const text = rows.map(context).join(" ");
     readablePageText.push({ pageNumber: page.pageNumber, text });
     const heading = rows.slice(0, 6).map(context).join(" ");
@@ -158,7 +207,8 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
       const message = /summary/i.test(heading)
         ? "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice."
         : "This returns, credit, or acceptance page repeats delivery lines in a different context, so its rows were skipped to avoid counting them as new items.";
-      refusals.push({ code: "UNVERIFIABLE_VALUE", message, page: page.pageNumber, sourceText: heading });
+      const sourceRow = rows.slice(0, 6).find((row) => excludedPage.test(context(row)));
+      refusals.push({ code: "UNVERIFIABLE_VALUE", message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: heading });
       continue;
     }
     const result = classifyRows(rows);
@@ -170,9 +220,13 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
   const palletNotes = readablePageText.flatMap((page) => {
     const depot = page.text.match(/(\d+)\s+pallets?\s+loaded at depot/i);
     const site = page.text.match(/(\d+)\s+pallets?\s+unloaded at site/i);
-    return depot && site && depot[1] !== site[1] ? [{ pageNumber: page.pageNumber, depot: depot[0], site: site[0] }] : [];
+    if (!depot || !site || depot[1] === site[1]) return [];
+    const rows = metadataPages.find((entry) => entry.pageNumber === page.pageNumber)?.rows ?? [];
+    const depotRow = rows.find((candidate) => context(candidate).includes(depot[0]));
+    const siteRow = rows.find((candidate) => context(candidate).includes(site[0]));
+    return [{ pageNumber: page.pageNumber, lines: [...new Set([depotRow?.lineNumber, siteRow?.lineNumber].filter((line): line is number => line !== undefined))], depot: depot[0], site: site[0] }];
   });
-  for (const note of palletNotes) refusals.push({ code: "CONFLICTING_VALUES", message: "The pallet counts in the depot and site notes do not agree; please check the delivery record.", page: note.pageNumber, sourceText: `${note.depot}; ${note.site}` });
+  for (const note of palletNotes) refusals.push({ code: "CONFLICTING_VALUES", message: "The pallet counts in the depot and site notes do not agree; please check the delivery record.", page: note.pageNumber, ...(note.lines.length ? { lines: note.lines } : {}), sourceText: `${note.depot}; ${note.site}` });
 
   for (const documentTotal of totals) {
     const multiPageRefusal = multiPageTotalRefusal(documentTotal.value, pages.length);
@@ -181,10 +235,10 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
       continue;
     }
     if (documentTotalContradicts(documentTotal.value, documentTotal.items, pages.length === 1, documentTotal.complete)) {
-      refusals.push({ code: "ARITHMETIC_CONTRADICTION", message: "The stated document total does not match the sum of the verified line totals.", page: documentTotal.value.evidence.page, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
+      refusals.push({ code: "ARITHMETIC_CONTRADICTION", message: "The stated document total does not match the sum of the verified line totals.", page: documentTotal.value.evidence.page, line: documentTotal.value.evidence.line, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
       break;
     }
   }
 
-  return { items, refusals };
+  return { items, refusals, metadata: extractMetadata(metadataPages) };
 }

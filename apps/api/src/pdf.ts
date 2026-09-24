@@ -10,6 +10,7 @@ export interface PdfTextItem {
 
 export type PdfRow = {
   pageNumber: number;
+  lineNumber: number;
   y: number;
   tokens: PdfTextItem[];
 };
@@ -43,14 +44,14 @@ export async function extractPdfPages(buffer: ArrayBuffer): Promise<PdfPage[]> {
 }
 
 export function groupIntoRows(pageNumber: number, items: PdfTextItem[], tolerance = 2): PdfRow[] {
-  const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
+  const sorted = items.filter((item) => item.text.trim() !== "").sort((a, b) => b.y - a.y || a.x - b.x);
   const rows: PdfRow[] = [];
   for (const item of sorted) {
     const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= tolerance);
     if (row) {
       row.tokens.push(item);
       row.tokens.sort((a, b) => a.x - b.x);
-    } else rows.push({ pageNumber, y: item.y, tokens: [item] });
+    } else rows.push({ pageNumber, lineNumber: 0, y: item.y, tokens: [item] });
   }
-  return rows.sort((a, b) => b.y - a.y);
+  return rows.sort((a, b) => b.y - a.y).map((row, index) => ({ ...row, lineNumber: index + 1 }));
 }

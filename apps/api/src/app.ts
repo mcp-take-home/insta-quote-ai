@@ -52,7 +52,7 @@ export function createApp(database: OpenDatabase, uploadDir: string) {
       try {
         if (!row.resultJson) throw new Error("Missing result");
         const parsed = JSON.parse(row.resultJson);
-        return c.json(DocumentResponseSchema.parse({ id: row.id, status: "completed", items: parsed.items, refusals: parsed.refusals }));
+        return c.json(DocumentResponseSchema.parse({ id: row.id, status: "completed", items: parsed.items, refusals: parsed.refusals, metadata: parsed.metadata }));
       } catch {
         const message = "The saved processing result could not be read. Please upload the document again.";
         await database.db.update(documents).set({ status: "failed", errorMessage: message, updatedAt: new Date().toISOString() }).where(eq(documents.id, row.id));

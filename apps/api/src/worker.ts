@@ -6,7 +6,7 @@ import { documents } from "./db";
 import { extractDocument } from "./extract";
 
 type ClaimedDocument = { id: string; file_path: string };
-export type DocumentProcessor = (buffer: ArrayBuffer) => Promise<Pick<Extract<DocumentResponse, { status: "completed" }>, "items" | "refusals">>;
+export type DocumentProcessor = (buffer: ArrayBuffer) => Promise<Pick<Extract<DocumentResponse, { status: "completed" }>, "items" | "refusals" | "metadata">>;
 
 export async function processNextJob(
   { db, sqlite }: OpenDatabase,
