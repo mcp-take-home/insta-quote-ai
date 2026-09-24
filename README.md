@@ -1,6 +1,6 @@
 # Insta Quote AI
 
-A small PDF quote review app. It extracts only line items that can be tied to source text and keeps uncertain rows visible as plain-language refusals.
+A small PDF quote review app. It extracts document details and line items tied to source text, and keeps uncertain rows visible as plain-language refusals.
 
 ## Run locally
 
@@ -23,7 +23,7 @@ Open [http://localhost:5173](http://localhost:5173). The API listens on port 300
 
 `PDF upload → local file → SQLite document queue → background worker → positioned PDF text parsing → evidence and refusal checks → persisted result → browser polling`
 
-The upload endpoint saves the file and queued record, then returns `202` without parsing it in the request. A worker in the API process claims queued records with a conditional SQLite update, reads each PDF, and persists either a completed result (including any refusals) or a processing failure. The web app polls the document endpoint about once a second and stops when it reaches a terminal state. Polling is enough for this short local job flow and keeps the implementation simple without a WebSocket connection.
+The upload endpoint saves the file and queued record, then returns `202` without parsing it in the request. A worker in the API process claims queued records with a conditional SQLite update, reads each PDF, and persists either a completed result (including any refusals) or a processing failure. The web app polls the document endpoint about once a second and stops when it reaches a terminal state. Polling is enough for this short local job flow and keeps the implementation simple without a WebSocket connection. Document details are optional when no exact source text supports them. Page and line references use 1-based numbering; a line is one reconstructed visible text row on that PDF page, including separator rows.
 
 Files and SQLite keep the assessment easy to run without external services. They are local to this checkout and are not shared or durable across machines; a deployed service would use shared durable file storage and a production queue/database. The UI uses Rux with the shared response schema for JSON polling. Upload uses native `fetch` because that request must send `multipart/form-data`, while the configured Rux endpoint body is JSON-oriented.
 
@@ -33,7 +33,7 @@ The hardest decision was where to draw the extraction boundary. I chose determin
 
 ## Where I am not confident
 
-The parser expects a readable PDF text layer and a recognizable `Item / Description / Qty / Unit Price` table with a line total column. It uses token positions and a small row-coordinate tolerance, so unusual column layouts, overlapping or malformed text, and wrapped multi-line descriptions can be misclassified or refused. It does not do OCR, and the supplied sample API integration test skips when `../data/KBS-10270.pdf` is unavailable. I verified the provided KBS-10270 example in the UI; that does not establish accuracy on other suppliers' layouts.
+The parser expects a readable PDF text layer and a recognizable `Item / Description / Qty / Unit Price` table with a line total column. Header details and disclaimer text rely on labeled rows and recognizable headings or footers. It uses token positions and a small row-coordinate tolerance, so unusual column layouts, overlapping or malformed text, and wrapped multi-line descriptions can be misclassified or refused. It does not do OCR, and the supplied sample API integration test skips when `../data/KBS-10270.pdf` is unavailable. I verified the provided KBS-10270 example in the UI; that does not establish accuracy on other suppliers' layouts.
 
 ## With three more days
 

@@ -102,8 +102,10 @@ function UploadPage() {
   )
 }
 
-function Source({ evidence }: { evidence: Evidence }) {
-  return <p className="source">Page {evidence.page} · <q>{evidence.sourceText}</q></p>
+type LineEvidence = Evidence & { line?: number }
+
+function Source({ evidence }: { evidence: LineEvidence }) {
+  return <p className="source">Page {evidence.page}{evidence.line !== undefined && ` · line ${evidence.line}`} · <q>{evidence.sourceText}</q></p>
 }
 
 function NumberField({ label, sourced }: { label: string; sourced: SourcedNumber }) {
@@ -126,6 +128,7 @@ function ItemList({ items }: { items: Extract<DocumentResponse, { status: 'compl
       {items.map((item, index) => (
         <li className="item" key={`${item.description}-${index}`}>
           <h3>{item.description}</h3>
+          {item.evidence && <Source evidence={item.evidence} />}
           <dl className="values">
             <NumberField label="Quantity" sourced={item.quantity} />
             <NumberField label="Unit price" sourced={item.unitPrice} />
@@ -137,18 +140,68 @@ function ItemList({ items }: { items: Extract<DocumentResponse, { status: 'compl
   )
 }
 
+type MetadataKey = 'companyName' | 'documentType' | 'documentNumber' | 'deliveredTo' | 'orderedBy' | 'disclaimer'
+type SourcedMetadata = { value: string; evidence: LineEvidence }
+type DocumentMetadata = Partial<Record<MetadataKey, SourcedMetadata>>
+
+const metadataFields: { key: MetadataKey; label: string }[] = [
+  { key: 'companyName', label: 'Company name' },
+  { key: 'documentType', label: 'Document type' },
+  { key: 'documentNumber', label: 'Document number' },
+  { key: 'deliveredTo', label: 'Delivered to' },
+  { key: 'orderedBy', label: 'Ordered by' },
+  { key: 'disclaimer', label: 'Disclaimer' },
+]
+
+function DocumentDetails({ metadata }: { metadata?: DocumentMetadata }) {
+  if (!metadata) {
+    return (
+      <section className="result-section document-details" aria-labelledby="details-title">
+        <h2 id="details-title">Document details</h2>
+        <p className="metadata-unavailable">Details unavailable for this earlier upload.</p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="result-section document-details" aria-labelledby="details-title">
+      <h2 id="details-title">Document details</h2>
+      <dl className="metadata-grid">
+        {metadataFields.map(({ key, label }) => {
+          const field = metadata?.[key]
+          return (
+            <div className="metadata-field" key={key}>
+              <dt>{label}</dt>
+              <dd className={field ? undefined : 'missing-value'}>
+                {field?.value ?? 'Not found in document'}
+                {field && <Source evidence={field.evidence} />}
+              </dd>
+            </div>
+          )
+        })}
+      </dl>
+    </section>
+  )
+}
+
 function RefusalList({ refusals }: { refusals: Extract<DocumentResponse, { status: 'completed' }>['refusals'] }) {
   if (!refusals.length) return <p className="empty-note">No items need attention.</p>
   return (
     <ul className="refusals-list">
-      {refusals.map((refusal, index) => (
-        <li className="refusal" key={`${refusal.code}-${refusal.page ?? 'document'}-${index}`}>
-          <p>{refusal.message}</p>
-          {refusal.page !== undefined && <p className="source">Page {refusal.page}</p>}
-          {refusal.sourceText && <p className="source">Source: <q>{refusal.sourceText}</q></p>}
-          {refusal.contextText && <p className="context">Context: <q>{refusal.contextText}</q></p>}
-        </li>
-      ))}
+      {refusals.map((refusal, index) => {
+        const lines = refusal.lines?.length ? refusal.lines : undefined
+        const location = refusal.page !== undefined
+          ? `Page ${refusal.page}${lines ? ` · lines ${lines.join(', ')}` : refusal.line !== undefined ? ` · line ${refusal.line}` : ''}`
+          : lines ? `Lines ${lines.join(', ')}` : refusal.line !== undefined ? `Line ${refusal.line}` : ''
+        return (
+          <li className="refusal" key={`${refusal.code}-${refusal.page ?? 'document'}-${index}`}>
+            <p>{refusal.message}</p>
+            {location && <p className="source">{location}</p>}
+            {refusal.sourceText && <p className="source">Source: <q>{refusal.sourceText}</q></p>}
+            {refusal.contextText && <p className="context">Context: <q>{refusal.contextText}</q></p>}
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -185,6 +238,7 @@ function DocumentPage() {
       {document.data?.status === 'completed' && (
         <>
           <p className="complete-note" role="status">Review complete. Verified items and anything that needs attention are listed below.</p>
+          <DocumentDetails metadata={document.data.metadata} />
           <section className="result-section" aria-labelledby="items-title">
             <h2 id="items-title">Extracted items <span className="count">{document.data.items.length}</span></h2>
             <ItemList items={document.data.items} />

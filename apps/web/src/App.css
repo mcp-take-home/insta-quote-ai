@@ -161,6 +161,52 @@ input[type='file']::file-selector-button {
   margin-top: 32px;
 }
 
+.document-details {
+  padding: 18px;
+  border-radius: 10px;
+  background: #f1f5ef;
+}
+
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 22px;
+  margin: 0;
+}
+
+.metadata-field dt {
+  margin-bottom: 4px;
+  color: #53675f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.metadata-field dd {
+  margin: 0 0 5px;
+  color: #1c3933;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.metadata-field dd .source {
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+.metadata-field .missing-value {
+  color: #64746c;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.metadata-unavailable {
+  margin-bottom: 0;
+  color: #53675f;
+  font-size: 14px;
+}
+
 .result-section h2,
 .error-panel h2 {
   display: flex;
@@ -204,6 +250,10 @@ input[type='file']::file-selector-button {
   font-size: 17px;
   font-weight: 650;
   line-height: 1.4;
+}
+
+.item > .source {
+  margin: -8px 0 14px;
 }
 
 .values {
@@ -347,6 +397,15 @@ q {
   .values {
     grid-template-columns: 1fr;
     gap: 13px;
+  }
+
+  .document-details {
+    padding: 14px;
+  }
+
+  .metadata-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
   }
 
   .attention {
