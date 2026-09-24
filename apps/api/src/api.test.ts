@@ -145,8 +145,7 @@ describe("document API", () => {
     expect(completed.metadata?.documentNumber?.value).toBe("KBS-10270");
     expect(completed.metadata?.deliveredTo?.value).toBe("Site 6, Matai Grove");
     expect(completed.metadata?.orderedBy?.value).toBe("S. Prasad");
-    expect(completed.metadata?.disclaimer?.value).toBe("Freight and handling included where applicable.");
-    expect(completed.metadata?.disclaimer?.evidence.line).toBe(14);
+    expect(completed.metadata?.disclaimer).toBeUndefined();
     expect(completed.refusals.every((refusal) => refusal.page === undefined || refusal.line !== undefined || refusal.code === "UNREADABLE_CONTENT")).toBe(true);
     expect(completed.refusals.length).toBeGreaterThan(0);
   });

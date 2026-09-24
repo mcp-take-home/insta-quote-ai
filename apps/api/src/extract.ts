@@ -18,7 +18,7 @@ function context(row: PdfRow): string { return row.tokens.map(clean).filter(Bool
 function rowEvidence(row: PdfRow, sourceText = context(row)): Evidence { return { page: row.pageNumber, line: row.lineNumber, sourceText }; }
 function sourcedRow(row: PdfRow, value: string): SourcedText { return { value, evidence: rowEvidence(row) }; }
 
-function extractMetadata(pages: Array<{ pageNumber: number; rows: PdfRow[] }>): Metadata {
+export function extractMetadata(pages: Array<{ pageNumber: number; rows: PdfRow[] }>): Metadata {
   const metadata: Metadata = {};
   const firstPage = pages.find((page) => page.pageNumber === 1)?.rows ?? [];
   const firstRow = firstPage[0];
@@ -43,21 +43,10 @@ function extractMetadata(pages: Array<{ pageNumber: number; rows: PdfRow[] }>): 
       const match = text.match(pattern);
       if (!metadata[key] && match?.[1]?.trim()) metadata[key] = sourcedRow(row, match[1].trim());
     }
-    const note = text.match(/^(?:disclaimer|note)\s*:\s*(.+)$/i);
-    if (!metadata.disclaimer && note?.[1]?.trim() && !/^driver\s+notes?\b/i.test(text)) metadata.disclaimer = sourcedRow(row, note[1].trim());
+    const disclaimer = text.match(/^disclaimer\s*:\s*(.+)$/i);
+    if (!metadata.disclaimer && disclaimer?.[1]?.trim()) metadata.disclaimer = sourcedRow(row, disclaimer[1].trim());
   }
 
-  if (!metadata.disclaimer) for (const { rows } of pages) {
-    const total = rows.findIndex((row) => /^total\s*:/i.test(context(row)));
-    const last = rows.at(-1);
-    if (total >= 0 && last && last.lineNumber > (rows[total]?.lineNumber ?? Infinity)) {
-      const text = context(last);
-      if (text.length > 15 && /[.!?]$/.test(text) && !/^(?:driver\s+notes?|summary|total\b|page\s+\d)/i.test(text)) {
-        metadata.disclaimer = sourcedRow(last, text);
-        break;
-      }
-    }
-  }
   return metadata;
 }
 
@@ -208,7 +197,7 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
         ? "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice."
         : "This returns, credit, or acceptance page repeats delivery lines in a different context, so its rows were skipped to avoid counting them as new items.";
       const sourceRow = rows.slice(0, 6).find((row) => excludedPage.test(context(row)));
-      refusals.push({ code: "UNVERIFIABLE_VALUE", message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: heading });
+      refusals.push({ code: "UNVERIFIABLE_VALUE", message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: sourceRow ? context(sourceRow) : heading });
       continue;
     }
     const result = classifyRows(rows);

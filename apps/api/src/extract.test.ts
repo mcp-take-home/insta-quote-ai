@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyRows, documentTotalContradicts, extractDocument, multiPageTotalRefusal } from "./extract";
+import { classifyRows, documentTotalContradicts, extractDocument, extractMetadata, multiPageTotalRefusal } from "./extract";
 import type { PdfRow } from "./pdf";
 
 function row(pageNumber: number, y: number, cells: Array<[number, string]>): PdfRow {
@@ -96,6 +96,16 @@ describe("classifyRows refusal boundary", () => {
   });
 });
 
+test("extracts a disclaimer only when explicitly labeled", () => {
+  const metadata = extractMetadata([{ pageNumber: 1, rows: [
+    row(1, 100, [[0, "Acme Ltd"]]),
+    row(1, 80, [[0, "Packing List"]]),
+    row(1, 60, [[0, "Note: count checked on arrival."]]),
+    row(1, 40, [[0, "Disclaimer: Quantities subject to final verification."]]),
+  ] }]);
+  expect(metadata.disclaimer).toMatchObject({ value: "Quantities subject to final verification.", evidence: { page: 1, line: 4, sourceText: "Disclaimer: Quantities subject to final verification." } });
+});
+
 const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];
 const sample = (name: string) => Bun.file(new URL(`../../../../data/${name}.pdf`, import.meta.url));
 const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(name).exists()))).every(Boolean);
@@ -109,8 +119,8 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps good pages and reports 
     documentNumber: { value: "KBS-10270", evidence: { page: 1, line: 3 } },
     deliveredTo: { value: "Site 6, Matai Grove", evidence: { page: 1, line: 5 } },
     orderedBy: { value: "S. Prasad", evidence: { page: 1, line: 6 } },
-    disclaimer: { value: "Freight and handling included where applicable.", evidence: { page: 1, line: 14 } },
   });
+  expect(result.metadata.disclaimer).toBeUndefined();
   expect(result.items.every((item) => item.evidence?.line && item.quantity.evidence.line && item.unitPrice.evidence.line && item.lineTotal.evidence.line)).toBe(true);
   expect(result.refusals.some((refusal) => refusal.code === "ARITHMETIC_CONTRADICTION")).toBe(true);
 
@@ -121,6 +131,7 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps good pages and reports 
 
   const noTotals = await extractDocument(await sample("KBS-10255").arrayBuffer());
   expect(noTotals.items).toHaveLength(0);
+  expect(noTotals.metadata.disclaimer).toBeUndefined();
   expect(noTotals.refusals.filter((refusal) => refusal.code === "MISSING_LINE_TOTAL")).toHaveLength(4);
   expect(noTotals.refusals.filter((refusal) => refusal.code === "MISSING_LINE_TOTAL").every((refusal) => refusal.line !== undefined)).toBe(true);
 
@@ -134,6 +145,7 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps good pages and reports 
   expect(deliveryRun.metadata.deliveredTo).toBeUndefined();
   expect(deliveryRun.metadata.orderedBy).toBeUndefined();
   expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNVERIFIABLE_VALUE").every((refusal) => refusal.line === 2)).toBe(true);
+  expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNVERIFIABLE_VALUE").every((refusal) => refusal.sourceText?.startsWith("Multi-Site Delivery Run"))).toBe(true);
   expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNREADABLE_CONTENT")).toHaveLength(1);
   expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNVERIFIABLE_VALUE")).toHaveLength(4);
 });

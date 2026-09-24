@@ -33,7 +33,7 @@ The hardest decision was where to draw the extraction boundary. I chose determin
 
 ## Where I am not confident
 
-The parser expects a readable PDF text layer and a recognizable `Item / Description / Qty / Unit Price` table with a line total column. Header details and disclaimer text rely on labeled rows and recognizable headings or footers. It uses token positions and a small row-coordinate tolerance, so unusual column layouts, overlapping or malformed text, and wrapped multi-line descriptions can be misclassified or refused. It does not do OCR, and the supplied sample API integration test skips when `../data/KBS-10270.pdf` is unavailable. I verified the provided KBS-10270 example in the UI; that does not establish accuracy on other suppliers' layouts.
+The parser expects a readable PDF text layer and a recognizable `Item / Description / Qty / Unit Price` table with a line total column. Header details rely on labeled rows and recognizable headings; a disclaimer is extracted only when explicitly labeled. It uses token positions and a small row-coordinate tolerance, so unusual column layouts, overlapping or malformed text, and wrapped multi-line descriptions can be misclassified or refused. It does not do OCR, and the supplied sample API integration test skips when `../data/KBS-10270.pdf` is unavailable. I verified the provided KBS-10270 example in the UI; that does not establish accuracy on other suppliers' layouts.
 
 ## With three more days
 
