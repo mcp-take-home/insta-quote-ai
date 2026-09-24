@@ -1,0 +1,26 @@
+{
+  "name": "insta-quote-assessment",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check": "turbo check",
+    "test": "turbo test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "turbo": "^2.11.3",
+    "typescript": "^7.0.2"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.2"
+    }
+  }
+}

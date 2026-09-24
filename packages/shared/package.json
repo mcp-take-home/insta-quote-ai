@@ -1,0 +1,8 @@
+{
+  "name": "@insta-quote/shared",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "check": "tsc --noEmit" },
+  "dependencies": { "zod": "^4.6.5" }
+}

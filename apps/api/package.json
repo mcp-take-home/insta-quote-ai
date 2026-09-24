@@ -1,0 +1,17 @@
+{
+  "name": "@insta-quote/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@insta-quote/shared": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.9",
+    "pdfjs-dist": "^6.3.289"
+  }
+}
