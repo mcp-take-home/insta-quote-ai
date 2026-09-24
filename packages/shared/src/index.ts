@@ -19,8 +19,10 @@ export const ExtractedItemSchema = z.object({
 });
 
 export const RefusalSchema = z.object({
+  code: z.string().min(1),
   message: z.string().min(1),
   page: z.number().int().positive().optional(),
+  sourceText: z.string().optional(),
   contextText: z.string().optional(),
 });
 
@@ -38,7 +40,10 @@ export const DocumentResponseSchema = z.discriminatedUnion("status", [
   z.object({
     id: DocumentIdSchema,
     status: z.literal("failed"),
-    error: z.string().min(1),
+    error: z.object({
+      code: z.literal("PDF_PROCESSING_FAILED"),
+      message: z.string().min(1),
+    }),
   }),
 ]);
 
