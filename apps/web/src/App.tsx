@@ -62,7 +62,7 @@ function UploadPage() {
       setValidationError('Choose a PDF file to upload.')
       return
     }
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    if (!file.name.toLowerCase().endsWith('.pdf') || (file.type !== '' && file.type !== 'application/pdf')) {
       setValidationError('Choose a PDF file. Other file types are not supported.')
       return
     }
@@ -107,10 +107,13 @@ function Source({ evidence }: { evidence: Evidence }) {
 }
 
 function NumberField({ label, sourced }: { label: string; sourced: SourcedNumber }) {
+  const displayValue = label === 'Quantity'
+    ? sourced.value.toLocaleString(undefined, { maximumFractionDigits: 4 })
+    : `$${sourced.value.toFixed(2)}`
   return (
     <div className="value-field">
       <dt>{label}</dt>
-      <dd>{sourced.value.toLocaleString(undefined, { maximumFractionDigits: 4 })}</dd>
+      <dd>{displayValue}</dd>
       <Source evidence={sourced.evidence} />
     </div>
   )
@@ -156,6 +159,7 @@ function DocumentPage() {
     queryKey: ['document', id],
     queryFn: () => getDocument(id),
     refetchInterval: (query) => {
+      if (query.state.error) return false
       const status = query.state.data?.status
       return status === 'completed' || status === 'failed' ? false : 1000
     },
