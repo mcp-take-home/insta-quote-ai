@@ -15,7 +15,7 @@ export const ExtractedItemSchema = z.object({
   description: z.string().min(1),
   quantity: SourcedNumberSchema,
   unitPrice: SourcedNumberSchema,
-  lineTotal: SourcedNumberSchema.optional(),
+  lineTotal: SourcedNumberSchema,
 });
 
 export const RefusalSchema = z.object({
