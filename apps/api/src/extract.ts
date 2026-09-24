@@ -4,6 +4,7 @@ import { extractPdfPages, groupIntoRows, type PdfRow, type PdfTextItem } from ".
 type Column = "item" | "description" | "quantity" | "unit" | "unitPrice" | "lineTotal" | "weight";
 type Header = { y: number; starts: Partial<Record<Column, number>>; hasLineTotal: boolean };
 type Classification = { items: ExtractedItem[]; refusals: Refusal[]; total?: SourcedNumber };
+type PageTotal = { value: SourcedNumber; items: ExtractedItem[]; complete: boolean };
 
 const labels: Array<[Column, RegExp]> = [
   ["item", /^item(?:\s|$)/i], ["description", /^(?:description|product|details)$/i],
@@ -52,6 +53,10 @@ function refusal(code: string, message: string, row: PdfRow): Refusal {
   return { code, message, page: row.pageNumber, sourceText: context(row) };
 }
 
+export function documentTotalContradicts(total: SourcedNumber, items: ExtractedItem[], complete: boolean): boolean {
+  return complete && Math.abs(items.reduce((sum, item) => sum + item.lineTotal.value, 0) - total.value) > 0.010001;
+}
+
 export function classifyRows(rows: PdfRow[]): Classification {
   const header = findHeader(rows);
   if (!header) {
@@ -73,6 +78,11 @@ export function classifyRows(rows: PdfRow[]): Classification {
     const description = cellTokens(row, header, "description").map(clean).filter(Boolean).join(" ");
     const candidateItem = itemCell.length > 0 && /^\d+[.)]?$/.test(clean(itemCell[0]!));
     if (!candidateItem) {
+      const hasLineValues = description && (["quantity", "unitPrice", "lineTotal"] as Column[]).some((column) => cellTokens(row, header, column).length > 0);
+      if (hasLineValues) {
+        refusals.push(refusal("INVALID_ITEM_NUMBER", "This line has item details, but its item number is missing or unclear, so it was not extracted.", row));
+        continue;
+      }
       const allText = context(row);
       const totalMatch = allText.match(/^Total\s*:?\s*(.+)$/i);
       if (totalMatch) {
@@ -116,7 +126,7 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
   const pages = await extractPdfPages(buffer);
   const items: ExtractedItem[] = [];
   const refusals: Refusal[] = [];
-  const totals: SourcedNumber[] = [];
+  const totals: PageTotal[] = [];
   const readablePageText: Array<{ pageNumber: number; text: string }> = [];
 
   for (const page of pages) {
@@ -139,7 +149,7 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
     const result = classifyRows(rows);
     items.push(...result.items);
     refusals.push(...result.refusals);
-    if (result.total) totals.push(result.total);
+    if (result.total) totals.push({ value: result.total, items: result.items, complete: result.refusals.length === 0 });
   }
 
   const palletNotes = readablePageText.flatMap((page) => {
@@ -150,9 +160,8 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
   for (const note of palletNotes) refusals.push({ code: "CONFLICTING_VALUES", message: "The pallet counts in the depot and site notes do not agree; please check the delivery record.", page: note.pageNumber, sourceText: `${note.depot}; ${note.site}` });
 
   for (const documentTotal of totals) {
-    const extractedTotal = items.reduce((sum, item) => sum + (item.lineTotal?.value ?? 0), 0);
-    if (Math.abs(extractedTotal - documentTotal.value) > 0.010001) {
-      refusals.push({ code: "ARITHMETIC_CONTRADICTION", message: "The stated document total does not match the sum of the verified line totals.", page: documentTotal.evidence.page, sourceText: documentTotal.evidence.sourceText, contextText: documentTotal.evidence.contextText });
+    if (documentTotalContradicts(documentTotal.value, documentTotal.items, documentTotal.complete)) {
+      refusals.push({ code: "ARITHMETIC_CONTRADICTION", message: "The stated document total does not match the sum of the verified line totals.", page: documentTotal.value.evidence.page, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
       break;
     }
   }

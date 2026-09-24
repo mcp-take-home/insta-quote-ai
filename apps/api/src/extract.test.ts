@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyRows, extractDocument } from "./extract";
+import { classifyRows, documentTotalContradicts, extractDocument } from "./extract";
 import type { PdfRow } from "./pdf";
 
 function row(pageNumber: number, y: number, cells: Array<[number, string]>): PdfRow {
@@ -53,27 +53,41 @@ describe("classifyRows refusal boundary", () => {
     rows[1]!.tokens.push({ text: "3", x: 340, y: 80, width: 5, height: 10 });
     expect(classifyRows(rows).refusals[0]?.code).toBe("COLUMN_AMBIGUITY");
   });
+
+  test("refuses a likely line item when its item number is absent or malformed", () => {
+    const rows = fixture();
+    rows[1]!.tokens[0]!.text = "abc";
+    expect(classifyRows(rows).refusals[0]?.code).toBe("INVALID_ITEM_NUMBER");
+  });
+
+  test("checks a document total only when that page's item set is complete", () => {
+    const item = classifyRows(fixture()).items[0]!;
+    const stated = { value: 100, evidence: { page: 2, sourceText: "$100.00" } };
+    expect(documentTotalContradicts(stated, [item], false)).toBe(false);
+    expect(documentTotalContradicts(stated, [item], true)).toBe(true);
+  });
 });
 
 test("extractDocument keeps good pages and reports unreadable pages and document contradictions", async () => {
-  const result = await extractDocument(await Bun.file("../data/KBS-10270.pdf").arrayBuffer());
+  const sample = (name: string) => Bun.file(new URL(`../test/fixtures/${name}.pdf`, import.meta.url));
+  const result = await extractDocument(await sample("KBS-10270").arrayBuffer());
   expect(result.items).toHaveLength(4);
   expect(result.refusals.some((refusal) => refusal.code === "ARITHMETIC_CONTRADICTION")).toBe(true);
 
-  const unreadable = await extractDocument(await Bun.file("../data/KBS-10241.pdf").arrayBuffer());
+  const unreadable = await extractDocument(await sample("KBS-10241").arrayBuffer());
   expect(unreadable.items).toHaveLength(0);
   expect(unreadable.refusals[0]?.code).toBe("UNREADABLE_CONTENT");
   expect(unreadable.refusals[0]?.page).toBe(1);
 
-  const noTotals = await extractDocument(await Bun.file("../data/KBS-10255.pdf").arrayBuffer());
+  const noTotals = await extractDocument(await sample("KBS-10255").arrayBuffer());
   expect(noTotals.items).toHaveLength(0);
   expect(noTotals.refusals.filter((refusal) => refusal.code === "MISSING_LINE_TOTAL")).toHaveLength(4);
 
-  const palletConflict = await extractDocument(await Bun.file("../data/KBS-10262.pdf").arrayBuffer());
+  const palletConflict = await extractDocument(await sample("KBS-10262").arrayBuffer());
   expect(palletConflict.items).toHaveLength(3);
   expect(palletConflict.refusals.some((refusal) => refusal.code === "CONFLICTING_VALUES")).toBe(true);
 
-  const deliveryRun = await extractDocument(await Bun.file("../data/KBS-DR118.pdf").arrayBuffer());
+  const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
   expect(deliveryRun.items).toHaveLength(9);
   expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNREADABLE_CONTENT")).toHaveLength(1);
   expect(deliveryRun.refusals.filter((refusal) => refusal.code === "UNVERIFIABLE_VALUE")).toHaveLength(4);

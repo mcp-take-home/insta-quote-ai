@@ -43,7 +43,7 @@ export async function extractPdfPages(buffer: ArrayBuffer): Promise<PdfPage[]> {
 }
 
 export function groupIntoRows(pageNumber: number, items: PdfTextItem[], tolerance = 2): PdfRow[] {
-  const sorted = [...items].sort((a, b) => Math.abs(a.y - b.y) <= tolerance ? a.x - b.x : b.y - a.y);
+  const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
   const rows: PdfRow[] = [];
   for (const item of sorted) {
     const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= tolerance);
