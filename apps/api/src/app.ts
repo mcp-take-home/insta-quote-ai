@@ -4,14 +4,19 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { Scalar } from "@scalar/hono-api-reference";
 import { DocumentResponseSchema } from "@insta-quote/shared";
 import type { OpenDatabase } from "./db";
-import { documents } from "./db";
+import { openApiDocument } from "./openapi";
+import { documents } from "./schema";
 
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
 export function createApp(database: OpenDatabase, uploadDir: string) {
   const app = new Hono();
+
+  app.get("/api/openapi.json", (c) => c.json(openApiDocument));
+  app.get("/api/reference", Scalar({ url: "/api/openapi.json" }));
 
   app.post("/api/docs", bodyLimit({ maxSize: MAX_UPLOAD_BYTES, onError: (c) => c.json({ error: "The PDF must be no larger than 15 MB." }, 413) }), async (c) => {
     let body: Record<string, string | File>;
@@ -52,7 +57,7 @@ export function createApp(database: OpenDatabase, uploadDir: string) {
       try {
         if (!row.resultJson) throw new Error("Missing result");
         const parsed = JSON.parse(row.resultJson);
-        return c.json(DocumentResponseSchema.parse({ id: row.id, status: "completed", items: parsed.items, refusals: parsed.refusals, metadata: parsed.metadata }));
+        return c.json(DocumentResponseSchema.parse({ id: row.id, status: "completed", items: parsed.items, details: parsed.details, notes: parsed.notes }));
       } catch {
         const message = "The saved processing result could not be read. Please upload the document again.";
         await database.db.update(documents).set({ status: "failed", errorMessage: message, updatedAt: new Date().toISOString() }).where(eq(documents.id, row.id));

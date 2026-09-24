@@ -1,29 +1,32 @@
 import { readFile } from "node:fs/promises";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { DocumentResponse } from "@insta-quote/shared";
 import type { OpenDatabase } from "./db";
-import { documents } from "./db";
+import { documents } from "./schema";
 import { extractDocument } from "./extract";
 
-type ClaimedDocument = { id: string; file_path: string };
-export type DocumentProcessor = (buffer: ArrayBuffer) => Promise<Pick<Extract<DocumentResponse, { status: "completed" }>, "items" | "refusals" | "metadata">>;
+export type DocumentProcessor = (buffer: ArrayBuffer) => Promise<Pick<Extract<DocumentResponse, { status: "completed" }>, "items" | "details" | "notes">>;
 
 export async function processNextJob(
-  { db, sqlite }: OpenDatabase,
+  { db }: OpenDatabase,
   processor: DocumentProcessor = extractDocument,
 ): Promise<boolean> {
   // ponytail: one SQLite conditional update claims one row atomically; a shared multi-process queue can replace it if deployment scales beyond this local app.
-  const job = sqlite.query<ClaimedDocument, [string]>(`
-    UPDATE documents
-    SET status = 'processing', updated_at = ?
-    WHERE id = (SELECT id FROM documents WHERE status = 'queued' ORDER BY created_at, id LIMIT 1)
-      AND status = 'queued'
-    RETURNING id, file_path
-  `).get(new Date().toISOString());
+  const job = db.transaction((tx) => {
+    const queued = tx.select({ id: documents.id }).from(documents)
+      .where(eq(documents.status, "queued"))
+      .orderBy(asc(documents.createdAt), asc(documents.id))
+      .limit(1).get();
+    if (!queued) return undefined;
+    return tx.update(documents)
+      .set({ status: "processing", updatedAt: new Date().toISOString() })
+      .where(and(eq(documents.id, queued.id), eq(documents.status, "queued")))
+      .returning({ id: documents.id, filePath: documents.filePath }).get();
+  });
   if (!job) return false;
 
   try {
-    const buffer = await readFile(job.file_path);
+    const buffer = await readFile(job.filePath);
     const result = await processor(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
     await db.update(documents).set({ status: "completed", resultJson: JSON.stringify(result), errorMessage: null, updatedAt: new Date().toISOString() }).where(eq(documents.id, job.id));
   } catch (error) {

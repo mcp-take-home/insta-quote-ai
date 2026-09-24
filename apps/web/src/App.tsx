@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, Route, Routes, useNavigate, useParams } from 'react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createClient } from '@nghien-ot/rux'
-import { DocumentResponseSchema, type DocumentResponse, type Evidence, type SourcedNumber } from '@insta-quote/shared'
+import { DocumentResponseSchema, type DocumentResponse, type Evidence, type SourcedText } from '@insta-quote/shared'
 import './App.css'
 
 class ApiError extends Error {}
@@ -74,7 +74,7 @@ function UploadPage() {
       <header className="brand"><span className="brand-mark" aria-hidden="true">IQ</span><span>Insta Quote AI</span></header>
       <section className="intro" aria-labelledby="upload-title">
         <h1 id="upload-title">Turn a quote PDF into clear line items.</h1>
-        <p className="lede">Upload a text based PDF. Every extracted number comes with its page and source text; anything uncertain stays in the attention list.</p>
+      <p className="lede">Upload a text based PDF. Every extracted number comes with its page and source text; uncertain values are clearly marked for review.</p>
       </section>
       <form className="upload-form" onSubmit={submit}>
         <label htmlFor="pdf-file">Choose a PDF</label>
@@ -108,101 +108,85 @@ function Source({ evidence }: { evidence: LineEvidence }) {
   return <p className="source">Page {evidence.page}{evidence.line !== undefined && ` · line ${evidence.line}`} · <q>{evidence.sourceText}</q></p>
 }
 
-function NumberField({ label, sourced }: { label: string; sourced: SourcedNumber }) {
-  const displayValue = label === 'Quantity'
-    ? sourced.value.toLocaleString(undefined, { maximumFractionDigits: 4 })
-    : `$${sourced.value.toFixed(2)}`
-  return (
-    <div className="value-field">
-      <dt>{label}</dt>
-      <dd>{displayValue}</dd>
-      <Source evidence={sourced.evidence} />
-    </div>
-  )
+type CompletedDocument = Extract<DocumentResponse, { status: 'completed' }>
+
+function SourcedTextList({ values }: { values: SourcedText[] }) {
+  return <ul className="sourced-text-list">{values.map((field, index) => <li key={`${field.value}-${index}`}><p>{field.value}</p><Source evidence={field.evidence} /></li>)}</ul>
 }
 
-function ItemList({ items }: { items: Extract<DocumentResponse, { status: 'completed' }>['items'] }) {
-  if (!items.length) return <p className="empty-note">No line items could be verified in this document.</p>
-  return (
-    <ol className="items-list">
-      {items.map((item, index) => (
-        <li className="item" key={`${item.description}-${index}`}>
-          <h3>{item.description}</h3>
-          {item.evidence && <Source evidence={item.evidence} />}
-          <dl className="values">
-            <NumberField label="Quantity" sourced={item.quantity} />
-            <NumberField label="Unit price" sourced={item.unitPrice} />
-            <NumberField label="Line total" sourced={item.lineTotal} />
-          </dl>
-        </li>
-      ))}
-    </ol>
-  )
+function displayLabel(key: string) {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase())
 }
 
-type MetadataKey = 'companyName' | 'documentType' | 'documentNumber' | 'deliveredTo' | 'orderedBy' | 'disclaimer'
-type SourcedMetadata = { value: string; evidence: LineEvidence }
-type DocumentMetadata = Partial<Record<MetadataKey, SourcedMetadata>>
+type DocumentNote = CompletedDocument['notes'][number]
 
-const metadataFields: { key: MetadataKey; label: string }[] = [
-  { key: 'companyName', label: 'Company name' },
-  { key: 'documentType', label: 'Document type' },
-  { key: 'documentNumber', label: 'Document number' },
-  { key: 'deliveredTo', label: 'Delivered to' },
-  { key: 'orderedBy', label: 'Ordered by' },
-  { key: 'disclaimer', label: 'Disclaimer' },
-]
+function NoteSource({ note }: { note: DocumentNote }) {
+  const page = note.evidence?.page ?? note.page
+  const line = note.evidence?.line ?? note.line
+  const sourceText = note.evidence?.sourceText ?? note.sourceText
+  const contextText = note.evidence?.contextText ?? note.contextText
+  const lines = note.lines?.length ? note.lines : undefined
+  if (page === undefined && line === undefined && !lines && !sourceText && !contextText) return null
+  const location = page !== undefined ? `Page ${page}` : ''
+  const lineLabel = lines ? `lines ${lines.join(', ')}` : line !== undefined ? `line ${line}` : ''
+  return <div className="note-source">
+    {(location || lineLabel || sourceText) && <p className="source">{[location, lineLabel].filter(Boolean).join(' · ')}{sourceText && <>{location || lineLabel ? ' · ' : ''}<q>{sourceText}</q></>}</p>}
+    {contextText && <p className="context">Context: <q>{contextText}</q></p>}
+  </div>
+}
 
-function DocumentDetails({ metadata }: { metadata?: DocumentMetadata }) {
-  if (!metadata) {
-    return (
-      <section className="result-section document-details" aria-labelledby="details-title">
-        <h2 id="details-title">Document details</h2>
-        <p className="metadata-unavailable">Details unavailable for this earlier upload.</p>
-      </section>
-    )
-  }
+function NotesList({ notes }: { notes: DocumentNote[] }) {
+  return <ul className="notes-list">{notes.map((note, index) => (
+    <li className={note.error ? 'note-error' : undefined} key={`${note.value}-${index}`}>
+      <p className="note-value">{note.value}</p>
+      {note.error && note.error.message !== note.value && <p className="note-error-message">{note.error.message}</p>}
+      <NoteSource note={note} />
+    </li>
+  ))}</ul>
+}
 
+function DocumentDetails({ details, notes }: Pick<CompletedDocument, 'details' | 'notes'>) {
   return (
     <section className="result-section document-details" aria-labelledby="details-title">
       <h2 id="details-title">Document details</h2>
-      <dl className="metadata-grid">
-        {metadataFields.map(({ key, label }) => {
-          const field = metadata?.[key]
-          return (
-            <div className="metadata-field" key={key}>
-              <dt>{label}</dt>
-              <dd className={field ? undefined : 'missing-value'}>
-                {field?.value ?? 'Not found in document'}
-                {field && <Source evidence={field.evidence} />}
-              </dd>
+      {Object.entries(details).length > 0 ? (
+        <dl className="details-list">
+          {Object.entries(details).map(([key, values]) => (
+            <div className="detail-field" key={key}>
+              <dt>{displayLabel(key)}</dt>
+              <dd><SourcedTextList values={values} /></dd>
             </div>
-          )
-        })}
-      </dl>
+          ))}
+        </dl>
+      ) : <p className="empty-note">No document details were extracted.</p>}
+      <section className="notes" aria-labelledby="notes-title">
+        <h3 id="notes-title">Notes</h3>
+        {notes.length ? <NotesList notes={notes} /> : <p className="empty-note">No notes.</p>}
+      </section>
     </section>
   )
 }
 
-function RefusalList({ refusals }: { refusals: Extract<DocumentResponse, { status: 'completed' }>['refusals'] }) {
-  if (!refusals.length) return <p className="empty-note">No items need attention.</p>
+function ItemList({ items }: { items: CompletedDocument['items'] }) {
+  if (!items.length) return <p className="empty-note">No line items were extracted.</p>
   return (
-    <ul className="refusals-list">
-      {refusals.map((refusal, index) => {
-        const lines = refusal.lines?.length ? refusal.lines : undefined
-        const location = refusal.page !== undefined
-          ? `Page ${refusal.page}${lines ? ` · lines ${lines.join(', ')}` : refusal.line !== undefined ? ` · line ${refusal.line}` : ''}`
-          : lines ? `Lines ${lines.join(', ')}` : refusal.line !== undefined ? `Line ${refusal.line}` : ''
-        return (
-          <li className="refusal" key={`${refusal.code}-${refusal.page ?? 'document'}-${index}`}>
-            <p>{refusal.message}</p>
-            {location && <p className="source">{location}</p>}
-            {refusal.sourceText && <p className="source">Source: <q>{refusal.sourceText}</q></p>}
-            {refusal.contextText && <p className="context">Context: <q>{refusal.contextText}</q></p>}
-          </li>
-        )
-      })}
-    </ul>
+    <div className="items-table-wrap" role="region" aria-label="Extracted items" tabIndex={0}>
+      <table className="items-table">
+        <thead><tr><th scope="col">Description</th><th scope="col">Quantity</th><th scope="col">Unit price</th><th scope="col">Line total</th></tr></thead>
+        <tbody>{items.map((item, index) => (
+          <tr className={item.error ? 'item-error' : undefined} key={`${item.description ?? item.error?.code ?? 'item'}-${index}`}>
+            <th scope="row">
+              {item.description ?? 'Description unavailable'}
+              {item.error && <p className="item-error-message">{item.error.message}</p>}
+              <Source evidence={item.evidence} />
+            </th>
+            <td>{item.quantity ? <>{item.quantity.value.toLocaleString(undefined, { maximumFractionDigits: 4 })}<Source evidence={item.quantity.evidence} /></> : '—'}</td>
+            <td>{item.unitPrice ? <>{`$${item.unitPrice.value.toFixed(2)}`}<Source evidence={item.unitPrice.evidence} /></> : '—'}</td>
+            <td>{item.lineTotal ? <>{`$${item.lineTotal.value.toFixed(2)}`}<Source evidence={item.lineTotal.evidence} /></> : '—'}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
   )
 }
 
@@ -237,15 +221,11 @@ function DocumentPage() {
       )}
       {document.data?.status === 'completed' && (
         <>
-          <p className="complete-note" role="status">Review complete. Verified items and anything that needs attention are listed below.</p>
-          <DocumentDetails metadata={document.data.metadata} />
+          <p className="complete-note" role="status">Review complete. Extracted items and document details are listed below.</p>
+          <DocumentDetails details={document.data.details} notes={document.data.notes} />
           <section className="result-section" aria-labelledby="items-title">
             <h2 id="items-title">Extracted items <span className="count">{document.data.items.length}</span></h2>
             <ItemList items={document.data.items} />
-          </section>
-          <section className="result-section attention" aria-labelledby="refusals-title">
-            <h2 id="refusals-title">Needs attention <span className="count">{document.data.refusals.length}</span></h2>
-            <RefusalList refusals={document.data.refusals} />
           </section>
         </>
       )}

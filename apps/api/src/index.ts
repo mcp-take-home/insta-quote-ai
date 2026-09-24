@@ -5,7 +5,7 @@ import { startWorker } from "./worker";
 
 const dataDir = resolve(import.meta.dir, "../../../data");
 const database = openDatabase(resolve(dataDir, "documents.sqlite"));
-recoverProcessingJobs(database.sqlite);
+recoverProcessingJobs(database.db);
 startWorker(database);
 
 const app = createApp(database, resolve(dataDir, "uploads"));

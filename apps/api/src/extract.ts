@@ -1,10 +1,10 @@
-import type { Evidence, ExtractedItem, Refusal, SourcedNumber, SourcedText } from "@insta-quote/shared";
+import type { Evidence, ExtractedItem, Note, SourcedNumber, SourcedText } from "@insta-quote/shared";
 import { extractPdfPages, groupIntoRows, type PdfRow, type PdfTextItem } from "./pdf";
 
 type Column = "item" | "description" | "quantity" | "unit" | "unitPrice" | "lineTotal" | "weight";
 type Header = { y: number; starts: Partial<Record<Column, number>>; hasLineTotal: boolean };
-type Metadata = Partial<Record<"companyName" | "documentType" | "documentNumber" | "deliveredTo" | "orderedBy" | "disclaimer", SourcedText>>;
-type Classification = { items: ExtractedItem[]; refusals: Refusal[]; total?: SourcedNumber };
+type Details = { details: Record<string, SourcedText[]>; notes: Note[] };
+type Classification = { items: ExtractedItem[]; total?: SourcedNumber; tableLines: Set<number> };
 type PageTotal = { value: SourcedNumber; items: ExtractedItem[]; complete: boolean };
 
 const labels: Array<[Column, RegExp]> = [
@@ -21,36 +21,18 @@ function contentRows(rows: PdfRow[]): PdfRow[] {
 function rowEvidence(row: PdfRow, sourceText = context(row)): Evidence { return { page: row.pageNumber, line: row.lineNumber, sourceText }; }
 function sourcedRow(row: PdfRow, value: string): SourcedText { return { value, evidence: rowEvidence(row) }; }
 
-export function extractMetadata(pages: Array<{ pageNumber: number; rows: PdfRow[] }>): Metadata {
-  const metadata: Metadata = {};
-  const firstPage = contentRows(pages.find((page) => page.pageNumber === 1)?.rows ?? []);
-  const firstRow = firstPage[0];
-  const first = firstRow ? context(firstRow) : "";
-  if (firstRow && /^(?:company\s*:\s*.+|.+\b(?:ltd\.?|limited|pty\.?|inc\.?|corp\.?))$/i.test(first)) {
-    metadata.companyName = sourcedRow(firstRow, first.replace(/^company\s*:\s*/i, ""));
-  }
-  const second = firstPage[1];
-  if (second) {
-    const value = context(second);
-    if (/^(?:packing\s+list|invoice|delivery\s+docket|multi-site\s+delivery\s+run\b)/i.test(value)) metadata.documentType = sourcedRow(second, value);
-  }
-
-  for (const { rows } of pages) for (const row of contentRows(rows)) {
+export function extractDetails(pages: Array<{ pageNumber: number; rows: PdfRow[]; tableLines?: Set<number> }>): Details {
+  const details: Record<string, SourcedText[]> = Object.create(null);
+  const notes: Note[] = [];
+  for (const page of pages) for (const row of contentRows(page.rows)) {
+    if (page.tableLines?.has(row.lineNumber)) continue;
     const text = context(row);
-    const labeled: Array<[keyof Metadata, RegExp]> = [
-      ["documentNumber", /^document\s*(?:no\.?|number)\s*[:#]\s*(.+)$/i],
-      ["deliveredTo", /^delivered\s+to\s*:\s*(.+)$/i],
-      ["orderedBy", /^ordered\s+by\s*:\s*(.+)$/i],
-    ];
-    for (const [key, pattern] of labeled) {
-      const match = text.match(pattern);
-      if (!metadata[key] && match?.[1]?.trim()) metadata[key] = sourcedRow(row, match[1].trim());
-    }
-    const disclaimer = text.match(/^disclaimer\s*:\s*(.+)$/i);
-    if (!metadata.disclaimer && disclaimer?.[1]?.trim()) metadata.disclaimer = sourcedRow(row, disclaimer[1].trim());
+    if (/^(?:document\s+)?total\s*:?\s*(?:(?:(?:NZ|US|AU)\s*\$)|(?:NZD|USD|AUD)\s*|[$€£])?\s*(?:\(-?\d[\d,]*(?:\.\d{1,2})?\)|-?\d[\d,]*(?:\.\d{1,2})?)(?:\s*(?:NZD|USD|AUD))?$/i.test(text)) continue;
+    const match = text.match(/^([^:]+?)\s*:\s*(.+)$/);
+    if (match) (details[match[1]!.trim()] ??= []).push(sourcedRow(row, match[2]!.trim()));
+    else notes.push({ value: text, evidence: rowEvidence(row) });
   }
-
-  return metadata;
+  return { details, notes };
 }
 
 function findHeader(rows: PdfRow[]): Header | undefined {
@@ -87,19 +69,16 @@ function parseNumber(token: PdfTextItem | undefined, kind: "quantity" | "money",
   return { value, evidence: { ...rowEvidence(row, token.text), contextText: context(row) } };
 }
 
-function refusal(code: string, message: string, row: PdfRow): Refusal {
-  return { code, message, page: row.pageNumber, line: row.lineNumber, sourceText: context(row) };
-}
-
 export function documentTotalContradicts(total: SourcedNumber, items: ExtractedItem[], scopeKnown: boolean, complete: boolean): boolean {
-  return scopeKnown && complete && Math.abs(items.reduce((sum, item) => sum + item.lineTotal.value, 0) - total.value) > 0.010001;
+  return scopeKnown && complete && items.every((item) => item.lineTotal && !item.error) && Math.abs(items.reduce((sum, item) => sum + item.lineTotal!.value, 0) - total.value) > 0.010001;
 }
 
-export function multiPageTotalRefusal(total: SourcedNumber, pageCount: number): Refusal | undefined {
+export function multiPageTotalNote(total: SourcedNumber, pageCount: number): Note | undefined {
   if (pageCount <= 1) return;
+  const message = "This stated total cannot be reconciled because the document spans multiple pages and its page scope is unclear.";
   return {
-    code: "UNVERIFIABLE_VALUE",
-    message: "This stated total cannot be reconciled because the document spans multiple pages and its page scope is unclear.",
+    value: message,
+    error: { code: "UNVERIFIABLE_VALUE", message },
     page: total.evidence.page,
     line: total.evidence.line,
     sourceText: total.evidence.sourceText,
@@ -110,22 +89,36 @@ export function multiPageTotalRefusal(total: SourcedNumber, pageCount: number): 
 export function classifyRows(rows: PdfRow[]): Classification {
   const header = findHeader(rows);
   if (!header) {
-    const refusals = rows.flatMap((row) => {
+    const items: ExtractedItem[] = [];
+    for (const row of rows) {
       const first = row.tokens.find((token) => clean(token) !== "");
-      return first && /^\d+[.)]?$/.test(clean(first)) && row.tokens.some((token) => clean(token).length > 1)
-        ? [refusal("COLUMN_AMBIGUITY", "This page appears to contain item rows, but its table columns could not be identified safely.", row)]
-        : [];
-    });
-    return { items: [], refusals };
+      const rest = row.tokens.filter((token) => token !== first);
+      const hasNumericCell = rest.some((token) => /^(?:(?:NZ|US|AU)\s*)?\$?\d[\d,]*(?:\.\d{1,2})?(?:\s*(?:NZD|USD|AUD))?$/i.test(clean(token)));
+      if (first && /^\d{1,3}[.)]?$/.test(clean(first)) && rest.length >= 2 && hasNumericCell) {
+        items.push({ description: rest.map(clean).join(" "), evidence: rowEvidence(row), error: { code: "COLUMN_AMBIGUITY", message: "This line appears to be an item, but its table columns could not be identified safely." } });
+      }
+    }
+    return { items, tableLines: new Set(items.map((item) => item.evidence.line!)) };
   }
   const items: ExtractedItem[] = [];
-  const refusals: Refusal[] = [];
   let total: SourcedNumber | undefined;
+  const tableLines = new Set<number>();
+  const errorItem = (row: PdfRow, code: string, message: string, description?: string): ExtractedItem => {
+    const quantityTokens = cellTokens(row, header, "quantity");
+    const priceTokens = cellTokens(row, header, "unitPrice");
+    const totalTokens = cellTokens(row, header, "lineTotal");
+    const quantity = quantityTokens.length === 1 ? parseNumber(quantityTokens[0], "quantity", row.pageNumber, row) : undefined;
+    const unitPrice = priceTokens.length === 1 ? parseNumber(priceTokens[0], "money", row.pageNumber, row) : undefined;
+    const lineTotal = totalTokens.length === 1 ? parseNumber(totalTokens[0], "money", row.pageNumber, row) : undefined;
+    return { ...(description ? { description } : {}), evidence: rowEvidence(row), ...(quantity ? { quantity } : {}), ...(unitPrice ? { unitPrice } : {}), ...(lineTotal ? { lineTotal } : {}), error: { code, message } };
+  };
 
   for (const row of rows) {
-    if (row.y >= header.y) continue;
+    if (row.y > header.y) continue;
+    if (row.y === header.y) { tableLines.add(row.lineNumber); continue; }
     const allText = context(row);
     if (/^Total\s*:?\s*.+$/i.test(allText)) {
+      tableLines.add(row.lineNumber);
       const source = row.tokens.find((token) => /^(?:NZ\s*)?\$?\s*\d/i.test(clean(token)));
       total = parseNumber(source, "money", row.pageNumber, row);
       continue;
@@ -136,17 +129,19 @@ export function classifyRows(rows: PdfRow[]): Classification {
     if (!candidateItem) {
       const valueCellCount = (["quantity", "unitPrice", "lineTotal"] as Column[]).filter((column) => cellTokens(row, header, column).length > 0).length;
       if (description && valueCellCount > 0) {
-        refusals.push(refusal("INVALID_ITEM_NUMBER", "This line has item details, but its item number is missing or unclear, so it was not extracted.", row));
+        tableLines.add(row.lineNumber);
+        items.push(errorItem(row, "INVALID_ITEM_NUMBER", "This line has item details, but its item number is missing or unclear.", description));
         continue;
       }
       if (!description && valueCellCount >= 2) {
-        refusals.push(refusal("UNVERIFIABLE_VALUE", "This line contains several numeric values but has no clear item number or description, so it could not be checked safely.", row));
+        tableLines.add(row.lineNumber);
+        items.push(errorItem(row, "UNVERIFIABLE_VALUE", "This line contains several numeric values but has no clear item number or description."));
         continue;
       }
       continue;
     }
-
-    const fail = (code: string, message: string) => refusals.push(refusal(code, message, row));
+    tableLines.add(row.lineNumber);
+    const fail = (code: string, message: string) => items.push(errorItem(row, code, message, description || undefined));
     if (!description) { fail("UNVERIFIABLE_VALUE", "This line appears to be an item, but its description is missing."); continue; }
     if (!header.hasLineTotal) { fail("MISSING_LINE_TOTAL", "This table does not provide a line total for this item, so none was calculated."); continue; }
     const quantityCell = cellTokens(row, header, "quantity");
@@ -171,70 +166,77 @@ export function classifyRows(rows: PdfRow[]): Classification {
     }
     items.push({ description, evidence: { ...rowEvidence(row, description), contextText: context(row) }, quantity, unitPrice, lineTotal });
   }
-  return { items, refusals, ...(total ? { total } : {}) };
+  return { items, tableLines, ...(total ? { total } : {}) };
 }
 
 const excludedPage = /\b(summary|returns? note|credit adjustment|signed acceptance|acceptance)\b/i;
 
-export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: ExtractedItem[]; refusals: Refusal[]; metadata: Metadata }> {
+export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: ExtractedItem[] } & Details> {
   const pages = await extractPdfPages(buffer);
   const items: ExtractedItem[] = [];
-  const refusals: Refusal[] = [];
+  const notes: Note[] = [];
   const totals: PageTotal[] = [];
   const readablePageText: Array<{ pageNumber: number; text: string }> = [];
-  const metadataPages: Array<{ pageNumber: number; rows: PdfRow[] }> = [];
+  const detailPages: Array<{ pageNumber: number; rows: PdfRow[]; tableLines?: Set<number> }> = [];
 
   for (const page of pages) {
     const printable = page.items.filter((token) => clean(token) !== "");
     if (page.error || printable.length === 0) {
-      refusals.push({ code: "UNREADABLE_CONTENT", message: "This page has no readable text, so its contents could not be checked.", page: page.pageNumber });
+      const message = "This page has no readable text, so its contents could not be checked.";
+      notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
       continue;
     }
     const rows = contentRows(groupIntoRows(page.pageNumber, printable));
     if (rows.length === 0) {
-      refusals.push({ code: "UNREADABLE_CONTENT", message: "This page has no readable text, so its contents could not be checked.", page: page.pageNumber });
+      const message = "This page has no readable text, so its contents could not be checked.";
+      notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
       continue;
     }
-    metadataPages.push({ pageNumber: page.pageNumber, rows });
     const text = rows.map(context).join(" ");
     readablePageText.push({ pageNumber: page.pageNumber, text });
     const heading = rows.slice(0, 6).map(context).join(" ");
     if (excludedPage.test(heading)) {
+      detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: classifyRows(rows).tableLines });
       const message = /summary/i.test(heading)
         ? "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice."
         : "This returns, credit, or acceptance page repeats delivery lines in a different context, so its rows were skipped to avoid counting them as new items.";
       const sourceRow = rows.slice(0, 6).find((row) => excludedPage.test(context(row)));
-      refusals.push({ code: "UNVERIFIABLE_VALUE", message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: sourceRow ? context(sourceRow) : heading });
+      notes.push({ value: message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: sourceRow ? context(sourceRow) : heading, error: { code: "UNVERIFIABLE_VALUE", message } });
       continue;
     }
     const result = classifyRows(rows);
+    detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
     items.push(...result.items);
-    refusals.push(...result.refusals);
-    if (result.total) totals.push({ value: result.total, items: result.items, complete: result.refusals.length === 0 });
+    if (result.total) totals.push({ value: result.total, items: result.items, complete: result.items.every((item) => !item.error) });
   }
 
   const palletNotes = readablePageText.flatMap((page) => {
     const depot = page.text.match(/(\d+)\s+pallets?\s+loaded at depot/i);
     const site = page.text.match(/(\d+)\s+pallets?\s+unloaded at site/i);
     if (!depot || !site || depot[1] === site[1]) return [];
-    const rows = metadataPages.find((entry) => entry.pageNumber === page.pageNumber)?.rows ?? [];
+    const rows = detailPages.find((entry) => entry.pageNumber === page.pageNumber)?.rows ?? [];
     const depotRow = rows.find((candidate) => context(candidate).includes(depot[0]));
     const siteRow = rows.find((candidate) => context(candidate).includes(site[0]));
     return [{ pageNumber: page.pageNumber, lines: [...new Set([depotRow?.lineNumber, siteRow?.lineNumber].filter((line): line is number => line !== undefined))], depot: depot[0], site: site[0] }];
   });
-  for (const note of palletNotes) refusals.push({ code: "CONFLICTING_VALUES", message: "The pallet counts in the depot and site notes do not agree; please check the delivery record.", page: note.pageNumber, ...(note.lines.length ? { lines: note.lines } : {}), sourceText: `${note.depot}; ${note.site}` });
+  for (const note of palletNotes) {
+    const message = "The pallet counts in the depot and site notes do not agree; please check the delivery record.";
+    notes.push({ value: message, page: note.pageNumber, ...(note.lines.length ? { lines: note.lines } : {}), sourceText: `${note.depot}; ${note.site}`, error: { code: "CONFLICTING_VALUES", message } });
+  }
 
   for (const documentTotal of totals) {
-    const multiPageRefusal = multiPageTotalRefusal(documentTotal.value, pages.length);
-    if (multiPageRefusal) {
-      refusals.push(multiPageRefusal);
+    const multiPageNote = multiPageTotalNote(documentTotal.value, pages.length);
+    if (multiPageNote) {
+      notes.push(multiPageNote);
       continue;
     }
     if (documentTotalContradicts(documentTotal.value, documentTotal.items, pages.length === 1, documentTotal.complete)) {
-      refusals.push({ code: "ARITHMETIC_CONTRADICTION", message: "The stated document total does not match the sum of the verified line totals.", page: documentTotal.value.evidence.page, line: documentTotal.value.evidence.line, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
+      const message = "The stated document total does not match the sum of the verified line totals.";
+      notes.push({ value: message, error: { code: "ARITHMETIC_CONTRADICTION", message }, page: documentTotal.value.evidence.page, line: documentTotal.value.evidence.line, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
       break;
     }
   }
 
-  return { items, refusals, metadata: extractMetadata(metadataPages) };
+  const extractedDetails = extractDetails(detailPages);
+  return { items, ...extractedDetails, notes: [...extractedDetails.notes, ...notes] };
 }

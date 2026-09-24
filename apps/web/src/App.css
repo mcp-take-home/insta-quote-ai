@@ -167,44 +167,51 @@ input[type='file']::file-selector-button {
   background: #f1f5ef;
 }
 
-.metadata-grid {
+.details-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px 22px;
   margin: 0;
 }
 
-.metadata-field dt {
-  margin-bottom: 4px;
+.detail-field dt {
+  margin-bottom: 5px;
   color: #53675f;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
 }
 
-.metadata-field dd {
-  margin: 0 0 5px;
+.detail-field dd {
+  margin: 0;
   color: #1c3933;
   font-size: 15px;
-  font-weight: 600;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
-.metadata-field dd .source {
-  margin-top: 4px;
-  font-weight: 400;
+.sourced-text-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.metadata-field .missing-value {
-  color: #64746c;
-  font-size: 14px;
-  font-weight: 400;
+.sourced-text-list li > p:first-child {
+  margin-bottom: 4px;
+  font-weight: 600;
 }
 
-.metadata-unavailable {
-  margin-bottom: 0;
-  color: #53675f;
-  font-size: 14px;
+.notes {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid #d6e0d8;
+}
+
+.notes h3 {
+  margin-bottom: 12px;
+  color: #294e41;
+  font-size: 15px;
 }
 
 .result-section h2,
@@ -232,50 +239,114 @@ input[type='file']::file-selector-button {
   letter-spacing: 0;
 }
 
-.items-list,
-.refusals-list {
+.notes-list {
+  display: grid;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.item {
-  padding: 20px 0;
-  border-top: 1px solid #dce3dd;
+.notes-list li {
+  min-width: 0;
 }
 
-.item h3 {
-  margin-bottom: 16px;
-  color: #26453e;
-  font-size: 17px;
-  font-weight: 650;
-  line-height: 1.4;
-}
-
-.item > .source {
-  margin: -8px 0 14px;
-}
-
-.values {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px 18px;
-  margin: 0;
-}
-
-.value-field dt {
+.note-value {
   margin-bottom: 4px;
-  color: #62716c;
-  font-size: 12px;
-  font-weight: 600;
+  color: #294e41;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.value-field dd {
-  margin: 0 0 5px;
-  color: #1c3933;
-  font-size: 16px;
+.note-error .note-value,
+.note-error-message,
+.note-error .source,
+.note-error .context {
+  color: #7b2c22;
+}
+
+.note-error-message {
+  margin: 0 0 4px;
+  font-size: 14px;
   font-weight: 650;
+  line-height: 1.5;
+}
+
+.note-source .source,
+.note-source .context {
+  margin-top: 4px;
+}
+
+.items-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #dce3dd;
+  border-radius: 10px;
+  background: #fffefa;
+  -webkit-overflow-scrolling: touch;
+}
+
+.items-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.items-table th,
+.items-table td {
+  min-width: 108px;
+  padding: 14px 12px;
+  border-bottom: 1px solid #e3e9e4;
+  color: #1c3933;
+  font-size: 14px;
+  line-height: 1.45;
+  vertical-align: top;
+}
+
+.items-table th:first-child {
+  min-width: 220px;
+  width: 38%;
+}
+
+.items-table thead th {
+  background: #f4f7f2;
+  color: #53675f;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.items-table tbody th {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.items-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.items-table td {
   font-variant-numeric: tabular-nums;
+}
+
+.items-table td .source,
+.items-table th .source {
+  margin-top: 5px;
+  font-weight: 400;
+}
+
+.items-table .item-error > * {
+  background: #fff1ee;
+  color: #7b2c22;
+}
+
+.items-table .item-error .source {
+  color: #7b2c22;
+}
+
+.item-error-message {
+  margin: 5px 0 0;
+  color: #8c2d22;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .source,
@@ -293,34 +364,6 @@ input[type='file']::file-selector-button {
 
 q {
   quotes: '“' '”';
-}
-
-.attention {
-  padding: 18px;
-  border-radius: 10px;
-  background: #fff5e8;
-}
-
-.attention h2 {
-  color: #5c3d19;
-}
-
-.attention .count {
-  background: #f4e3ca;
-  color: #67451f;
-}
-
-.refusal {
-  padding: 14px 0;
-  border-top: 1px solid #ead9c1;
-}
-
-.refusal > p:first-child {
-  margin-bottom: 7px;
-  color: #543b20;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.5;
 }
 
 .empty-note {
@@ -394,21 +437,16 @@ q {
     padding: 17px;
   }
 
-  .values {
-    grid-template-columns: 1fr;
-    gap: 13px;
-  }
-
   .document-details {
     padding: 14px;
   }
 
-  .metadata-grid {
+  .details-list {
     grid-template-columns: 1fr;
     gap: 14px;
   }
 
-  .attention {
-    padding: 14px;
+  .items-table {
+    min-width: 660px;
   }
 }
