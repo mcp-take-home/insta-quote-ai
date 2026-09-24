@@ -24,6 +24,8 @@ export const ExtractedItemSchema = z.object({
   unitPrice: SourcedNumberSchema.optional(),
   lineTotal: SourcedNumberSchema.optional(),
   error: z.object({ code: z.string().min(1), message: z.string().min(1) }).optional(),
+}).refine((item) => item.error !== undefined || (item.description !== undefined && item.quantity !== undefined && item.unitPrice !== undefined && item.lineTotal !== undefined), {
+  message: "An incomplete item must include an error explaining what could not be verified.",
 });
 
 export const NoteSchema = z.object({

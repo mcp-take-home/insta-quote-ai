@@ -1,21 +1,21 @@
 # PDF quote extraction design
 
-## Scope and choice
+## Architecture
 
-The assessment needs trustworthy extraction and a readable result. Three possible approaches were considered: (1) flatten page text and match rows with regular expressions, (2) use PDF.js positioned tokens and deterministic table columns, (3) ask a model to interpret each page. Choose (2): it reuses the supplied prototype, preserves page and token evidence, and makes refusals explainable. It intentionally supports a narrow class of text-layer tables instead of guessing across layouts.
+The Bun workspace contains a Hono API, a React/Vite client, and a shared Zod contract. The API accepts PDFs at `POST /api/docs`, writes each file under local `data/uploads`, and inserts a queued row into SQLite. An in-process worker claims queued rows with Drizzle, extracts the PDF, and saves a completed result or processing error. `GET /api/docs/:id` returns queued, processing, completed, or failed state. The client polls until completion or failure.
 
-## Data flow
+`apps/api/src/schema.ts` defines the Drizzle table. `apps/api/drizzle.config.ts` points Drizzle Kit at that schema, and checked-in migrations under `apps/api/drizzle/` are applied by `apps/api/src/db.ts` when the database opens. Queries and updates use Drizzle ORM. `GET /api/openapi.json` serves the API description and `GET /api/reference` serves its Scalar reference.
 
-`POST /api/docs` validates a PDF, saves it under local `data/uploads`, and inserts a queued SQLite document. A loop in the API process atomically claims one queued document, parses outside the request, and stores `completed` with items/refusals or `failed` with a clear processing error. `GET /api/docs/:id` exposes current state. The React app uploads and polls until terminal status.
+## Extraction and evidence
 
-## Extraction boundary
+PDF.js reads positioned text tokens page by page. Tokens are grouped into 1-based visible text rows, then table columns are identified from a header and candidate rows are classified using their token positions. Numeric fields retain the exact PDF token text as `evidence.sourceText`, along with 1-based page and line references; row context is retained where useful. Extracted values are not synthesized: missing, ambiguous, invalid, or contradictory item values produce an inline item error, while document-level issues produce a note with an inline error and available source location.
 
-Adapt `test/utils/pdf.ts` without changing `test/`. Process each page independently. Group positioned tokens into rows, find an `Item / Description / Qty / Unit Price` table header, derive column boundaries, then classify candidate rows. An item requires explicit valid quantity and unit price; line total is required when the header contains that column. Numeric values carry the exact token text and 1-based PDF page. Validate source text and arithmetic; never synthesize a missing value. An unsafe row becomes a plain-language refusal, while adjacent valid rows survive. A page without readable text becomes a refusal. Relevant contradictions in page notes or document totals become refusals. Summary, return, credit, and acceptance pages are treated cautiously to avoid double counting delivery lines.
+Completed results contain `items`, dynamic `details`, and `notes`. A `Label: value` row contributes a sourced text value under that label in `details`; repeated labels keep multiple values. Other non-table text becomes a note. Item and note errors stay attached to the affected entry; there is no separate refusal collection. Readable summary, returns, credit, and acceptance pages are skipped for item counting and explained in notes. Pallet-count conflicts and document-total contradictions are also reported as notes. A multi-page total with unclear scope is marked unverifiable.
 
-## Interface
+## API and interface
 
-Two small routes: upload and document result. Upload, queued, processing, failed, completed, items, and refusals each have explicit copy. Completed results show quantity, price, total, and their page/source evidence. Refusals remain visible beside successful items. Single-column layout, accessible labels, native file input, restrained visual style.
+Uploads are limited to 15 MB and checked for multipart input, a PDF filename or content type, and the `%PDF-` signature. The API returns `202` with the queued document ID before extraction runs. The browser uses a native file input, uploads multipart data, then polls the document route about once per second. The result view shows sourced details, notes, item values, per-field source text, and inline errors.
 
-## Checks and limits
+## Limits
 
-Use Bun tests for unsupported evidence, malformed numbers, contradictions, missing totals, partial success, and 1-based provenance. Exercise upload, asynchronous status transition, persisted result, and polling with sample PDFs. No OCR: scanned pages report unreadable content. Layout support remains intentionally narrow and documented in README.
+Extraction relies on a readable PDF text layer; there is no OCR. It expects a recognizable item, description, quantity, unit-price, and line-total table. Unusual layouts, wrapped descriptions, or unclear page-total scope can produce errors or notes instead of inferred values. Storage and the worker are local to the API process. There is no backward-compatibility layer for older result shapes; the shared Zod schema is the current response contract.

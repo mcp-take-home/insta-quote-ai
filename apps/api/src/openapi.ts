@@ -55,6 +55,7 @@ export const openApiDocument = {
       ExtractionError: { type: "object", required: ["code", "message"], properties: { code: { type: "string" }, message: { type: "string" } } },
       ExtractedItem: {
         type: "object", required: ["evidence"],
+        anyOf: [{ required: ["error"] }, { required: ["description", "quantity", "unitPrice", "lineTotal"] }],
         properties: { description: { type: "string" }, evidence: { $ref: "#/components/schemas/Evidence" }, quantity: { $ref: "#/components/schemas/SourcedNumber" }, unitPrice: { $ref: "#/components/schemas/SourcedNumber" }, lineTotal: { $ref: "#/components/schemas/SourcedNumber" }, error: { $ref: "#/components/schemas/ExtractionError" } },
       },
       Note: {

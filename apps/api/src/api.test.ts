@@ -111,7 +111,7 @@ describe("document API", () => {
   test("rejects persisted JSON that does not match the result contract", async () => {
     const response = await upload();
     const { id } = await response.json() as { id: string };
-    database.db.update(documents).set({ status: "completed", resultJson: JSON.stringify({ items: [], notes: [{ value: "Broken", error: { code: "INVALID" } }] }) }).where(eq(documents.id, id)).run();
+    database.db.update(documents).set({ status: "completed", resultJson: JSON.stringify({ items: [{ evidence: { page: 1, line: 2, sourceText: "Unclear item" } }], details: {}, notes: [] }) }).where(eq(documents.id, id)).run();
     const failed = await (await app.request(`/api/docs/${id}`)).json() as DocumentResponse;
     expect(failed.status).toBe("failed");
     expect(database.db.select({ status: documents.status }).from(documents).where(eq(documents.id, id)).get()?.status).toBe("failed");
