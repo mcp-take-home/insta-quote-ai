@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { DocumentResponse } from "@insta-quote/shared";
-import { createApp } from "./app";
+import { createApp, MAX_UPLOAD_BYTES } from "./app";
 import { openDatabase, recoverProcessingJobs } from "./db";
 import { processNextJob, type DocumentProcessor } from "./worker";
 
@@ -17,6 +17,8 @@ const result = {
   }],
   refusals: [{ code: "MISSING_QUANTITY", message: "The quantity for this item is missing, so it could not be verified.", page: 1, sourceText: "Screws $3.00" }],
 };
+const samplePath = resolve(import.meta.dir, "../../../../data/KBS-10270.pdf");
+const sampleAvailable = await Bun.file(samplePath).exists();
 
 describe("document API", () => {
   let root: string;
@@ -74,6 +76,40 @@ describe("document API", () => {
     expect(badSignature.status).toBe(415);
   });
 
+  test("returns 400 for an empty file and caps oversized multipart ingress", async () => {
+    const empty = await upload(new File([], "empty.pdf", { type: "application/pdf" }));
+    expect(empty.status).toBe(400);
+    const oversized = await upload(new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], "large.pdf", { type: "application/pdf" }));
+    expect(oversized.status).toBe(413);
+  });
+
+  test("returns and persists failed when a worker cannot process a PDF", async () => {
+    const response = await upload();
+    const { id } = await response.json() as { id: string };
+    expect(await processNextJob(database, async () => { throw new Error("PDF text could not be read."); })).toBe(true);
+    const failed = await (await app.request(`/api/docs/${id}`)).json() as DocumentResponse;
+    expect(failed).toEqual({ id, status: "failed", error: { code: "PDF_PROCESSING_FAILED", message: "PDF text could not be read." } });
+    expect(database.sqlite.query<{ status: string; error_message: string }, [string]>("SELECT status, error_message FROM documents WHERE id = ?").get(id)).toEqual({ status: "failed", error_message: "PDF text could not be read." });
+  });
+
+  test("turns a corrupt persisted result into a persisted failed response", async () => {
+    const response = await upload();
+    const { id } = await response.json() as { id: string };
+    database.sqlite.query("UPDATE documents SET status = 'completed', result_json = '{broken' WHERE id = ?").run(id);
+    const failed = await (await app.request(`/api/docs/${id}`)).json() as DocumentResponse;
+    expect(failed).toEqual({ id, status: "failed", error: { code: "PDF_PROCESSING_FAILED", message: "The saved processing result could not be read. Please upload the document again." } });
+    expect(database.sqlite.query<{ status: string }, [string]>("SELECT status FROM documents WHERE id = ?").get(id)?.status).toBe("failed");
+  });
+
+  test("rejects persisted JSON that does not match the result contract", async () => {
+    const response = await upload();
+    const { id } = await response.json() as { id: string };
+    database.sqlite.query("UPDATE documents SET status = 'completed', result_json = ? WHERE id = ?").run(JSON.stringify({ items: [], refusals: [{ code: "INVALID" }] }), id);
+    const failed = await (await app.request(`/api/docs/${id}`)).json() as DocumentResponse;
+    expect(failed.status).toBe("failed");
+    expect(database.sqlite.query<{ status: string }, [string]>("SELECT status FROM documents WHERE id = ?").get(id)?.status).toBe("failed");
+  });
+
   test("requeues interrupted processing documents on restart", async () => {
     const response = await upload();
     const { id } = await response.json() as { id: string };
@@ -82,8 +118,8 @@ describe("document API", () => {
     expect(database.sqlite.query<{ status: string }, [string]>("SELECT status FROM documents WHERE id = ?").get(id)?.status).toBe("queued");
   });
 
-  test("uploads and processes a supplied sample PDF through the real extractor", async () => {
-    const sample = await readFile(resolve(import.meta.dir, "../../../../data/KBS-10270.pdf"));
+  test.skipIf(!sampleAvailable)("uploads and processes a supplied sample PDF through the real extractor", async () => {
+    const sample = await readFile(samplePath);
     const file = new File([new Uint8Array(sample).buffer as ArrayBuffer], "KBS-10270.pdf", { type: "application/pdf" });
     const response = await upload(file);
     expect(response.status).toBe(202);
