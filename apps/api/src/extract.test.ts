@@ -58,18 +58,37 @@ describe("classifyRows refusal boundary", () => {
     const rows = fixture();
     rows[1]!.tokens[0]!.text = "abc";
     expect(classifyRows(rows).refusals[0]?.code).toBe("INVALID_ITEM_NUMBER");
+
+    const missingNumber = fixture();
+    missingNumber[1]!.tokens.splice(0, 1);
+    expect(classifyRows(missingNumber).refusals[0]?.code).toBe("INVALID_ITEM_NUMBER");
   });
 
-  test("checks a document total only when that page's item set is complete", () => {
+  test("refuses unnumbered numeric rows but ignores a footer with only a line total", () => {
+    const rows = fixture();
+    rows[1]!.tokens.splice(0, 2);
+    expect(classifyRows(rows).refusals[0]?.code).toBe("UNVERIFIABLE_VALUE");
+
+    const footer = [...fixture(), row(2, 60, [[43, "Total:"], [502, "$10.00"]])];
+    const result = classifyRows(footer);
+    expect(result.refusals).toHaveLength(0);
+    expect(result.total?.value).toBe(10);
+  });
+
+  test("checks a document total only for a single-page document with complete items", () => {
     const item = classifyRows(fixture()).items[0]!;
     const stated = { value: 100, evidence: { page: 2, sourceText: "$100.00" } };
-    expect(documentTotalContradicts(stated, [item], false)).toBe(false);
-    expect(documentTotalContradicts(stated, [item], true)).toBe(true);
+    expect(documentTotalContradicts(stated, [item], false, true)).toBe(false);
+    expect(documentTotalContradicts(stated, [item], true, false)).toBe(false);
+    expect(documentTotalContradicts(stated, [item], true, true)).toBe(true);
   });
 });
 
-test("extractDocument keeps good pages and reports unreadable pages and document contradictions", async () => {
-  const sample = (name: string) => Bun.file(new URL(`../test/fixtures/${name}.pdf`, import.meta.url));
+const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];
+const sample = (name: string) => Bun.file(new URL(`../../../../data/${name}.pdf`, import.meta.url));
+const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(name).exists()))).every(Boolean);
+
+test.skipIf(!sampleDataAvailable)("extractDocument keeps good pages and reports sample document contradictions", async () => {
   const result = await extractDocument(await sample("KBS-10270").arrayBuffer());
   expect(result.items).toHaveLength(4);
   expect(result.refusals.some((refusal) => refusal.code === "ARITHMETIC_CONTRADICTION")).toBe(true);

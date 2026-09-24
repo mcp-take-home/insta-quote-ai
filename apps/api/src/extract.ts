@@ -53,8 +53,8 @@ function refusal(code: string, message: string, row: PdfRow): Refusal {
   return { code, message, page: row.pageNumber, sourceText: context(row) };
 }
 
-export function documentTotalContradicts(total: SourcedNumber, items: ExtractedItem[], complete: boolean): boolean {
-  return complete && Math.abs(items.reduce((sum, item) => sum + item.lineTotal.value, 0) - total.value) > 0.010001;
+export function documentTotalContradicts(total: SourcedNumber, items: ExtractedItem[], scopeKnown: boolean, complete: boolean): boolean {
+  return scopeKnown && complete && Math.abs(items.reduce((sum, item) => sum + item.lineTotal.value, 0) - total.value) > 0.010001;
 }
 
 export function classifyRows(rows: PdfRow[]): Classification {
@@ -74,20 +74,24 @@ export function classifyRows(rows: PdfRow[]): Classification {
 
   for (const row of rows) {
     if (row.y >= header.y) continue;
+    const allText = context(row);
+    if (/^Total\s*:?\s*.+$/i.test(allText)) {
+      const source = row.tokens.find((token) => /^(?:NZ\s*)?\$?\s*\d/i.test(clean(token)));
+      total = parseNumber(source, "money", row.pageNumber, row);
+      continue;
+    }
     const itemCell = cellTokens(row, header, "item");
     const description = cellTokens(row, header, "description").map(clean).filter(Boolean).join(" ");
     const candidateItem = itemCell.length > 0 && /^\d+[.)]?$/.test(clean(itemCell[0]!));
     if (!candidateItem) {
-      const hasLineValues = description && (["quantity", "unitPrice", "lineTotal"] as Column[]).some((column) => cellTokens(row, header, column).length > 0);
-      if (hasLineValues) {
+      const valueCellCount = (["quantity", "unitPrice", "lineTotal"] as Column[]).filter((column) => cellTokens(row, header, column).length > 0).length;
+      if (description && valueCellCount > 0) {
         refusals.push(refusal("INVALID_ITEM_NUMBER", "This line has item details, but its item number is missing or unclear, so it was not extracted.", row));
         continue;
       }
-      const allText = context(row);
-      const totalMatch = allText.match(/^Total\s*:?\s*(.+)$/i);
-      if (totalMatch) {
-        const source = row.tokens.find((token) => /^(?:NZ\s*)?\$?\s*\d/i.test(clean(token)));
-        total = parseNumber(source, "money", row.pageNumber, row);
+      if (!description && valueCellCount >= 2) {
+        refusals.push(refusal("UNVERIFIABLE_VALUE", "This line contains several numeric values but has no clear item number or description, so it could not be checked safely.", row));
+        continue;
       }
       continue;
     }
@@ -160,7 +164,7 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
   for (const note of palletNotes) refusals.push({ code: "CONFLICTING_VALUES", message: "The pallet counts in the depot and site notes do not agree; please check the delivery record.", page: note.pageNumber, sourceText: `${note.depot}; ${note.site}` });
 
   for (const documentTotal of totals) {
-    if (documentTotalContradicts(documentTotal.value, documentTotal.items, documentTotal.complete)) {
+    if (documentTotalContradicts(documentTotal.value, documentTotal.items, pages.length === 1, documentTotal.complete)) {
       refusals.push({ code: "ARITHMETIC_CONTRADICTION", message: "The stated document total does not match the sum of the verified line totals.", page: documentTotal.value.evidence.page, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
       break;
     }
