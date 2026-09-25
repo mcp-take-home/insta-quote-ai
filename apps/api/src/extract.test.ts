@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyRows, documentTotalContradicts, extractDetails, extractDocument, multiPageTotalNote } from "./extract";
+import { classifyRows, extractDetails, extractDocument } from "./extract";
 import { DocumentResponseSchema } from "@insta-quote/shared";
 import { extractPdfPages, type PdfRow } from "./pdf";
 
@@ -69,31 +69,16 @@ describe("classifyRows inline row errors", () => {
     expect(classifyRows(missingNumber).items[0]?.error?.code).toBe("INVALID_ITEM_NUMBER");
   });
 
-  test("refuses unnumbered numeric rows but ignores a footer with only a line total", () => {
+  test("refuses unnumbered numeric rows and leaves a total footer for details", () => {
     const rows = fixture();
     rows[1]!.tokens.splice(0, 2);
     expect(classifyRows(rows).items[0]?.error?.code).toBe("UNVERIFIABLE_VALUE");
 
     const footer = [...fixture(), row(2, 60, [[43, "Total:"], [502, "$10.00"]])];
     const result = classifyRows(footer);
-    expect(result.total?.value).toBe(10);
-  });
-
-  test("checks a document total only for a single-page document with complete items", () => {
-    const item = classifyRows(fixture()).items[0]!;
-    const stated = { value: 100, evidence: { page: 2, sourceText: "$100.00" } };
-    expect(documentTotalContradicts(stated, [item], false, true)).toBe(false);
-    expect(documentTotalContradicts(stated, [item], true, false)).toBe(false);
-    expect(documentTotalContradicts(stated, [item], true, true)).toBe(true);
-  });
-
-  test("explains why a multi-page stated total cannot be reconciled", () => {
-    const total = { value: 100, evidence: { page: 3, sourceText: "$100.00", contextText: "Total: $100.00" } };
-    const note = multiPageTotalNote(total, 3);
-    expect(note?.error?.code).toBe("UNVERIFIABLE_VALUE");
-    expect(note?.value).toMatch(/spans multiple pages/i);
-    expect(note?.page).toBe(3);
-    expect(multiPageTotalNote(total, 1)).toBeUndefined();
+    expect(result.items).toHaveLength(1);
+    expect(result.tableLines.has(footer[2]!.lineNumber)).toBe(false);
+    expect(extractDetails([{ pageNumber: 2, rows: footer, tableLines: result.tableLines }]).details.Total?.[0]?.value).toBe("$10.00");
   });
 
   test("finds likely headerless item rows without treating numbered prose as items", () => {
@@ -104,7 +89,7 @@ describe("classifyRows inline row errors", () => {
   });
 });
 
-test("collects all non-table labels and notes with full source evidence", () => {
+test("collects all non-table text as details with full source evidence", () => {
   const extracted = extractDetails([{ pageNumber: 1, rows: [
     row(1, 100, [[0, "-----------"]]),
     row(1, 80, [[0, "Acme Ltd"]]),
@@ -122,30 +107,48 @@ test("collects all non-table labels and notes with full source evidence", () => 
   ] }]);
   expect(extracted.details.Disclaimer).toMatchObject([{ value: "Quantities subject to final verification.", evidence: { page: 1, line: 6, sourceText: "Disclaimer: Quantities subject to final verification." } }]);
   expect(extracted.details.Reference?.map(({ value }) => value)).toEqual(["first", "second"]);
-  expect(extracted.details.Total).toBeUndefined();
-  expect(extracted.details["Document Total"]).toBeUndefined();
+  expect(extracted.details.Total?.map((entry) => entry.value)).toEqual(["$100.00", "NZ$ 100.00"]);
+  expect(extracted.details["Document Total"]?.[0]?.value).toBe("USD 100.00");
   expect(extracted.details["__proto__"]?.[0]?.value).toBe("safe");
   expect(extracted.details["constructor"]?.[0]?.value).toBe("also safe");
-  expect(extracted.notes).toMatchObject([
+  expect(extracted.details.Text).toMatchObject([
     { value: "Acme Ltd", evidence: { line: 2 } },
     { value: "Packing List", evidence: { line: 4 } },
   ]);
+  expect(extracted.notes).toEqual([]);
+});
+
+test("keeps non-table details on each source page, including repeated text and totals", () => {
+  const pages = [1, 2].map((pageNumber) => ({ pageNumber, rows: [
+    row(pageNumber, 100, [[0, "Kowhai Building Supplies Ltd"]]),
+    row(pageNumber, 80, [[0, "Document No: KBS-DR118"]]),
+    row(pageNumber, 60, [[0, "Total: $100.00"]]),
+    row(pageNumber, 40, [[0, `Page ${pageNumber} of 2`]]),
+  ] }));
+  const result = extractDetails(pages);
+  expect(result.details["Document No"]?.map((entry) => entry.evidence.page)).toEqual([1, 2]);
+  expect(result.details.Total?.map((entry) => entry.evidence.page)).toEqual([1, 2]);
+  expect(result.details.Text?.map((entry) => [entry.value, entry.evidence.page])).toEqual([
+    ["Kowhai Building Supplies Ltd", 1], ["Page 1 of 2", 1],
+    ["Kowhai Building Supplies Ltd", 2], ["Page 2 of 2", 2],
+  ]);
+  expect(result.notes).toEqual([]);
 });
 
 const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];
 const sample = (name: string) => Bun.file(new URL(`../../../../data/${name}.pdf`, import.meta.url));
 const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(name).exists()))).every(Boolean);
 
-test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and reports document contradictions", async () => {
+test.skipIf(!sampleDataAvailable)("extractDocument keeps items and page details for all supplied PDFs", async () => {
   const parsedSamples = await Promise.all(sampleNames.map(async (name, index) => DocumentResponseSchema.parse({ id: `sample-${index}`, status: "completed", ...await extractDocument(await sample(name).arrayBuffer()) })));
   expect(parsedSamples).toHaveLength(6);
   expect(parsedSamples[0]?.status === "completed" ? parsedSamples[0].items : []).toHaveLength(5);
   const result = await extractDocument(await sample("KBS-10270").arrayBuffer());
   expect(result.items).toHaveLength(4);
   expect(result.details).toMatchObject({ "Document No": [{ value: "KBS-10270", evidence: { page: 1, line: 3 } }], "Delivered to": [{ value: "Site 6, Matai Grove" }], "Ordered by": [{ value: "S. Prasad" }] });
-  expect(result.notes[0]).toMatchObject({ value: "Kowhai Building Supplies Ltd", evidence: { page: 1, line: 1 } });
+  expect(result.details.Text?.[0]).toMatchObject({ value: "Kowhai Building Supplies Ltd", evidence: { page: 1, line: 1 } });
   expect(result.items.every((item) => item.evidence.line && item.quantity?.evidence.line && item.unitPrice?.evidence.line && item.lineTotal?.evidence.line)).toBe(true);
-  expect(result.notes.some((note) => note.error?.code === "ARITHMETIC_CONTRADICTION" && note.page === 1)).toBe(true);
+  expect(result.notes.some((note) => note.error?.code === "ARITHMETIC_CONTRADICTION")).toBe(false);
 
   const unreadable = await extractDocument(await sample("KBS-10241").arrayBuffer());
   expect(unreadable.items).toHaveLength(4);
@@ -161,7 +164,7 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
 
   const palletConflict = await extractDocument(await sample("KBS-10262").arrayBuffer());
   expect(palletConflict.items).toHaveLength(3);
-  expect(palletConflict.notes.find((note) => note.error?.code === "CONFLICTING_VALUES")).toMatchObject({ page: 1, lines: [7, 13] });
+  expect(palletConflict.notes.some((note) => note.error?.code === "CONFLICTING_VALUES")).toBe(false);
 
   const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
   expect(deliveryRun.items).toHaveLength(24);
@@ -171,15 +174,12 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
   expect(deliveryRun.items.filter((item) => item.evidence.page === 4).map((item) => item.description)).toEqual([
     "Framing timber lot 4-1", "Framing timber lot 4-2", "Framing timber lot 4-3",
   ]);
-  expect(deliveryRun.notes).toContainEqual(expect.objectContaining({ value: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave", evidence: { page: 1, line: 2, sourceText: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave" } }));
-  expect(deliveryRun.details["Document No"]).toMatchObject([{ value: "KBS-DR118", evidence: { page: 1, line: 3 } }]);
-  expect(deliveryRun.details.Date).toMatchObject([{ value: "24 August 2026", evidence: { page: 1, line: 4 } }]);
-  expect(deliveryRun.details["Document No"]).toHaveLength(1);
-  expect(deliveryRun.details.Date).toHaveLength(1);
-  expect(deliveryRun.notes.filter((note) => note.value === "Kowhai Building Supplies Ltd")).toHaveLength(1);
-  expect(deliveryRun.notes.filter((note) => /^Page \d+ of \d+$/.test(note.value))).toHaveLength(0);
-  expect(deliveryRun.notes.map((note) => note.value)).toContain("Multi-Site Delivery Run 118 - Site 2 of 4 - Ranfurly Ave");
-  expect(deliveryRun.notes.map((note) => note.value)).toContain("Multi-Site Delivery Run 118 - Site 3 of 4 - Beach Road");
+  expect(deliveryRun.details.Text).toContainEqual(expect.objectContaining({ value: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave", evidence: { page: 1, line: 2, sourceText: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave" } }));
+  expect(deliveryRun.details["Document No"]?.map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(deliveryRun.details.Date?.map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(deliveryRun.details.Text?.filter((entry) => entry.value === "Kowhai Building Supplies Ltd").map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(deliveryRun.details.Text?.map((entry) => entry.value)).toContain("Multi-Site Delivery Run 118 - Site 2 of 4 - Ranfurly Ave");
+  expect(deliveryRun.details.Text?.map((entry) => entry.value)).toContain("Multi-Site Delivery Run 118 - Site 3 of 4 - Beach Road");
 
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toHaveLength(0);
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE" && /summary|returns|credit|acceptance/i.test(note.value))).toHaveLength(0);

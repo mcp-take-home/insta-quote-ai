@@ -4,8 +4,7 @@ import { extractPdfPages, groupIntoRows, type PdfRow, type PdfTextItem } from ".
 type Column = "item" | "description" | "quantity" | "unit" | "unitPrice" | "lineTotal" | "weight";
 type Header = { y: number; starts: Partial<Record<Column, number>>; hasLineTotal: boolean };
 type Details = { details: Record<string, SourcedText[]>; notes: Note[] };
-type Classification = { items: ExtractedItem[]; total?: SourcedNumber; tableLines: Set<number> };
-type PageTotal = { value: SourcedNumber; items: ExtractedItem[]; complete: boolean };
+type Classification = { items: ExtractedItem[]; tableLines: Set<number> };
 
 const labels: Array<[Column, RegExp]> = [
   ["item", /^item(?:\s|$)/i], ["description", /^(?:description|product|details)$/i],
@@ -24,27 +23,17 @@ function sourcedRow(row: PdfRow, value: string): SourcedText { return { value, e
 export function extractDetails(pages: Array<{ pageNumber: number; rows: PdfRow[]; tableLines?: Set<number> }>): Details {
   const details: Record<string, SourcedText[]> = Object.create(null);
   const notes: Note[] = [];
-  const detailValues = new Map<string, Set<string>>();
-  const noteValues = new Set<string>();
+  const seen = new Set<string>();
   for (const page of pages) for (const row of contentRows(page.rows)) {
     if (page.tableLines?.has(row.lineNumber)) continue;
     const text = context(row);
-    if (/^page\s+\d+\s+of\s+\d+$/i.test(text)) continue;
-    if (/^(?:document\s+)?total\s*:?\s*(?:(?:(?:NZ|US|AU)\s*\$)|(?:NZD|USD|AUD)\s*|[$€£])?\s*(?:\(-?\d[\d,]*(?:\.\d{1,2})?\)|-?\d[\d,]*(?:\.\d{1,2})?)(?:\s*(?:NZD|USD|AUD))?$/i.test(text)) continue;
     const match = text.match(/^([^:]+?)\s*:\s*(.+)$/);
-    if (match) {
-      const label = match[1]!.trim();
-      const value = match[2]!.trim();
-      const seen = detailValues.get(label) ?? new Set<string>();
-      if (!seen.has(value)) {
-        (details[label] ??= []).push(sourcedRow(row, value));
-        seen.add(value);
-        detailValues.set(label, seen);
-      }
-    } else if (!noteValues.has(text)) {
-      notes.push({ value: text, evidence: rowEvidence(row) });
-      noteValues.add(text);
-    }
+    const label = match ? match[1]!.trim() : "Text";
+    const value = match ? match[2]!.trim() : text;
+    const key = JSON.stringify([row.pageNumber, label, value]);
+    if (seen.has(key)) continue;
+    (details[label] ??= []).push(sourcedRow(row, value));
+    seen.add(key);
   }
   return { details, notes };
 }
@@ -83,23 +72,6 @@ function parseNumber(token: PdfTextItem | undefined, kind: "quantity" | "money",
   return { value, evidence: { ...rowEvidence(row, token.text), contextText: context(row) } };
 }
 
-export function documentTotalContradicts(total: SourcedNumber, items: ExtractedItem[], scopeKnown: boolean, complete: boolean): boolean {
-  return scopeKnown && complete && items.every((item) => item.lineTotal && !item.error) && Math.abs(items.reduce((sum, item) => sum + item.lineTotal!.value, 0) - total.value) > 0.010001;
-}
-
-export function multiPageTotalNote(total: SourcedNumber, pageCount: number): Note | undefined {
-  if (pageCount <= 1) return;
-  const message = "This stated total cannot be reconciled because the document spans multiple pages and its page scope is unclear.";
-  return {
-    value: message,
-    error: { code: "UNVERIFIABLE_VALUE", message },
-    page: total.evidence.page,
-    line: total.evidence.line,
-    sourceText: total.evidence.sourceText,
-    contextText: total.evidence.contextText,
-  };
-}
-
 export function classifyRows(rows: PdfRow[]): Classification {
   const header = findHeader(rows);
   if (!header) {
@@ -115,7 +87,6 @@ export function classifyRows(rows: PdfRow[]): Classification {
     return { items, tableLines: new Set(items.map((item) => item.evidence.line!)) };
   }
   const items: ExtractedItem[] = [];
-  let total: SourcedNumber | undefined;
   const tableLines = new Set<number>();
   const errorItem = (row: PdfRow, code: string, message: string, description?: string): ExtractedItem => {
     const quantityTokens = cellTokens(row, header, "quantity");
@@ -132,9 +103,6 @@ export function classifyRows(rows: PdfRow[]): Classification {
     if (row.y === header.y) { tableLines.add(row.lineNumber); continue; }
     const allText = context(row);
     if (/^Total\s*:?\s*.+$/i.test(allText)) {
-      tableLines.add(row.lineNumber);
-      const source = row.tokens.find((token) => /^(?:NZ\s*)?\$?\s*\d/i.test(clean(token)));
-      total = parseNumber(source, "money", row.pageNumber, row);
       continue;
     }
     const itemCell = cellTokens(row, header, "item");
@@ -180,15 +148,15 @@ export function classifyRows(rows: PdfRow[]): Classification {
     }
     items.push({ description, evidence: { ...rowEvidence(row, description), contextText: context(row) }, quantity, unitPrice, lineTotal });
   }
-  return { items, tableLines, ...(total ? { total } : {}) };
+  return { items, tableLines };
 }
 
-function classifyOcrRows(rows: PdfRow[]): ExtractedItem[] {
+function classifyOcrRows(rows: PdfRow[]): Classification {
   const header = rows.find((row) => row.tokens.some((token) => /^item$/i.test(clean(token))) && row.tokens.some((token) => /^description$/i.test(clean(token))));
-  if (!header) return [];
+  if (!header) return { items: [], tableLines: new Set() };
   const itemStart = header.tokens.find((token) => /^item$/i.test(clean(token)))!.x;
   const quantityStart = header.tokens.find((token) => /^qty$/i.test(clean(token)))?.x ?? Infinity;
-  return rows.flatMap((row) => {
+  const items = rows.flatMap((row) => {
     if (row.y >= header.y) return [];
     const itemNumber = row.tokens[0];
     if (!itemNumber || itemNumber.x > itemStart + 20 || !/^\d+[.)]?$/.test(clean(itemNumber))) return [];
@@ -201,22 +169,22 @@ function classifyOcrRows(rows: PdfRow[]): ExtractedItem[] {
       error: { code: "OCR_REQUIRES_VERIFICATION", message },
     }];
   });
+  return { items, tableLines: new Set([header.lineNumber, ...items.map((item) => item.evidence.line!)]) };
 }
 
 export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: ExtractedItem[] } & Details> {
   const pages = await extractPdfPages(buffer);
   const items: ExtractedItem[] = [];
   const notes: Note[] = [];
-  const totals: PageTotal[] = [];
-  const readablePageText: Array<{ pageNumber: number; text: string }> = [];
   const detailPages: Array<{ pageNumber: number; rows: PdfRow[]; tableLines?: Set<number> }> = [];
 
   for (const page of pages) {
     const printable = page.items.filter((token) => clean(token) !== "");
     if (page.ocr) {
       const rows = groupIntoRows(page.pageNumber, printable, 1);
-      const ocrItems = classifyOcrRows(rows);
-      if (ocrItems.length) items.push(...ocrItems);
+      const result = classifyOcrRows(rows);
+      detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
+      if (result.items.length) items.push(...result.items);
       else {
         const message = "This page has no readable item rows, so its contents could not be checked.";
         notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
@@ -234,39 +202,9 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
       notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
       continue;
     }
-    const text = rows.map(context).join(" ");
-    readablePageText.push({ pageNumber: page.pageNumber, text });
     const result = classifyRows(rows);
     detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
     items.push(...result.items);
-    if (result.total) totals.push({ value: result.total, items: result.items, complete: result.items.every((item) => !item.error) });
-  }
-
-  const palletNotes = readablePageText.flatMap((page) => {
-    const depot = page.text.match(/(\d+)\s+pallets?\s+loaded at depot/i);
-    const site = page.text.match(/(\d+)\s+pallets?\s+unloaded at site/i);
-    if (!depot || !site || depot[1] === site[1]) return [];
-    const rows = detailPages.find((entry) => entry.pageNumber === page.pageNumber)?.rows ?? [];
-    const depotRow = rows.find((candidate) => context(candidate).includes(depot[0]));
-    const siteRow = rows.find((candidate) => context(candidate).includes(site[0]));
-    return [{ pageNumber: page.pageNumber, lines: [...new Set([depotRow?.lineNumber, siteRow?.lineNumber].filter((line): line is number => line !== undefined))], depot: depot[0], site: site[0] }];
-  });
-  for (const note of palletNotes) {
-    const message = "The pallet counts in the depot and site notes do not agree; please check the delivery record.";
-    notes.push({ value: message, page: note.pageNumber, ...(note.lines.length ? { lines: note.lines } : {}), sourceText: `${note.depot}; ${note.site}`, error: { code: "CONFLICTING_VALUES", message } });
-  }
-
-  for (const documentTotal of totals) {
-    const multiPageNote = multiPageTotalNote(documentTotal.value, pages.length);
-    if (multiPageNote) {
-      notes.push(multiPageNote);
-      continue;
-    }
-    if (documentTotalContradicts(documentTotal.value, documentTotal.items, pages.length === 1, documentTotal.complete)) {
-      const message = "The stated document total does not match the sum of the verified line totals.";
-      notes.push({ value: message, error: { code: "ARITHMETIC_CONTRADICTION", message }, page: documentTotal.value.evidence.page, line: documentTotal.value.evidence.line, sourceText: documentTotal.value.evidence.sourceText, contextText: documentTotal.value.evidence.contextText });
-      break;
-    }
   }
 
   const extractedDetails = extractDetails(detailPages);

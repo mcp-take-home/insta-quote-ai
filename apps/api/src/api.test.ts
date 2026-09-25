@@ -137,11 +137,11 @@ describe("document API", () => {
     if (completed.status !== "completed") throw new Error("Expected a completed document");
     expect(completed.items.length).toBeGreaterThan(0);
     expect(completed.items.every((item) => item.evidence.line && (!item.quantity || item.quantity.evidence.line) && (!item.unitPrice || item.unitPrice.evidence.line) && (!item.lineTotal || item.lineTotal.evidence.line))).toBe(true);
-    expect(completed.notes).toContainEqual(expect.objectContaining({ value: "Kowhai Building Supplies Ltd", evidence: { page: 1, line: 1, sourceText: "Kowhai Building Supplies Ltd" } }));
+    expect(completed.details.Text).toContainEqual(expect.objectContaining({ value: "Kowhai Building Supplies Ltd", evidence: { page: 1, line: 1, sourceText: "Kowhai Building Supplies Ltd" } }));
     expect(completed.details["Document No"]?.[0]?.value).toBe("KBS-10270");
     expect(completed.details["Delivered to"]?.[0]?.value).toBe("Site 6, Matai Grove");
     expect(completed.details["Ordered by"]?.[0]?.value).toBe("S. Prasad");
-    expect(completed.notes.some((note) => note.error)).toBe(true);
+    expect(completed.notes.some((note) => note.error?.code === "ARITHMETIC_CONTRADICTION")).toBe(false);
   });
 
   test.skipIf(!sampleAvailable)("uploads all supplied PDFs and returns page-scoped items through the API", async () => {
