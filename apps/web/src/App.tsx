@@ -173,7 +173,7 @@ function ItemList({ items, label = 'Extracted items' }: { items: CompletedDocume
       <table className="items-table">
         <thead><tr><th scope="col">Description</th><th scope="col">Quantity</th><th scope="col">Unit price</th><th scope="col">Line total</th></tr></thead>
         <tbody>{items.map((item, index) => (
-          <tr className={item.error ? 'item-error' : undefined} key={`${item.description ?? item.error?.code ?? 'item'}-${index}`}>
+          <tr className={item.error ? 'item-error' : undefined} title={item.error?.message} key={`${item.description ?? item.error?.code ?? 'item'}-${index}`}>
             <th scope="row">
               {item.description ?? 'Description unavailable'}
               {item.error && <p className="item-error-message">{item.error.message}</p>}

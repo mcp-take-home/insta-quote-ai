@@ -79,9 +79,8 @@ export function classifyRows(rows: PdfRow[]): Classification {
     for (const row of rows) {
       const first = row.tokens.find((token) => clean(token) !== "");
       const rest = row.tokens.filter((token) => token !== first);
-      const hasNumericCell = rest.some((token) => /^(?:(?:NZ|US|AU)\s*)?\$?\d[\d,]*(?:\.\d{1,2})?(?:\s*(?:NZD|USD|AUD))?$/i.test(clean(token)));
-      if (first && /^\d{1,3}[.)]?$/.test(clean(first)) && rest.length >= 2 && hasNumericCell) {
-        items.push({ description: rest.map(clean).join(" "), evidence: rowEvidence(row), error: { code: "COLUMN_AMBIGUITY", message: "This line appears to be an item, but its table columns could not be identified safely." } });
+      if (first && /^\d{1,3}[.)]?$/.test(clean(first)) && rest.length > 0) {
+        items.push({ description: rest.map(clean).join(" "), evidence: rowEvidence(row), error: { code: "COLUMN_AMBIGUITY", message: "This numbered row appears to be an item, but its table columns could not be identified safely." } });
       }
     }
     return { items, tableLines: new Set(items.map((item) => item.evidence.line!)) };
@@ -121,12 +120,12 @@ export function classifyRows(rows: PdfRow[]): Classification {
         continuationLine = row.lineNumber;
         continue;
       }
-      if (description && valueCellCount > 0) {
+      if (description) {
         tableLines.add(row.lineNumber);
-        items.push(errorItem(row, "INVALID_ITEM_NUMBER", "This line has item details, but its item number is missing or unclear.", description));
+        items.push(errorItem(row, "INVALID_ITEM_NUMBER", "This table row has a description, but its item number is missing or unclear.", description));
         continue;
       }
-      if (!description && valueCellCount >= 2) {
+      if (!description && valueCellCount > 0) {
         tableLines.add(row.lineNumber);
         items.push(errorItem(row, "UNVERIFIABLE_VALUE", "This line contains several numeric values but has no clear item number or description."));
         continue;

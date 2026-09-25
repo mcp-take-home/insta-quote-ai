@@ -90,6 +90,18 @@ describe("classifyRows inline row errors", () => {
     expect(extractDetails([{ pageNumber: 2, rows, tableLines: result.tableLines }]).details.Text).toBeUndefined();
   });
 
+  test("keeps unnumbered description-only table rows as error items", () => {
+    const rows = [...fixture(), row(2, 40, [[71, "Unlisted framing work"]])];
+    const result = classifyRows(rows);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[1]).toMatchObject({
+      description: "Unlisted framing work",
+      error: { code: "INVALID_ITEM_NUMBER" },
+    });
+    expect(result.tableLines.has(rows[2]!.lineNumber)).toBe(true);
+    expect(extractDetails([{ pageNumber: 2, rows, tableLines: result.tableLines }]).details.Text).toBeUndefined();
+  });
+
   test("finds likely headerless item rows without treating numbered prose as items", () => {
     const rows = [row(1, 100, [[0, "1"], [20, "Timber"], [100, "2"], [140, "$5.00"]]), row(1, 80, [[0, "2026"], [30, "forecast for next year"]])];
     const result = classifyRows(rows);
@@ -170,6 +182,7 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps items and page details 
   expect(result.details).toMatchObject({ "Document No": [{ value: "KBS-10270", evidence: { page: 1, line: 3 } }], "Delivered to": [{ value: "Site 6, Matai Grove" }], "Ordered by": [{ value: "S. Prasad" }] });
   expect(result.details.Text?.[0]).toMatchObject({ value: "Kowhai Building Supplies Ltd", evidence: { page: 1, line: 1 } });
   expect(result.items.every((item) => item.evidence.line && item.quantity?.evidence.line && item.unitPrice?.evidence.line && item.lineTotal?.evidence.line)).toBe(true);
+  expect(result.details.Text).toContainEqual(expect.objectContaining({ value: "Freight and handling included where applicable.", evidence: expect.objectContaining({ page: 1, line: 14 }) }));
   expect(result.notes.some((note) => note.error?.code === "ARITHMETIC_CONTRADICTION")).toBe(false);
 
   const unreadable = await extractDocument(await sample("KBS-10241").arrayBuffer());
