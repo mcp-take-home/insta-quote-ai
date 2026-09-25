@@ -149,26 +149,21 @@ function notePage(note: DocumentNote) {
   return note.evidence?.page ?? note.page
 }
 
-function DocumentDetails({ details, notes }: Pick<CompletedDocument, 'details' | 'notes'>) {
-  return (
-    <section className="result-section document-details" aria-labelledby="details-title">
-      <h2 id="details-title">Document details</h2>
-      {Object.entries(details).length > 0 ? (
-        <dl className="details-list">
-          {Object.entries(details).map(([key, values]) => (
-            <div className="detail-field" key={key}>
-              <dt>{displayLabel(key)}</dt>
-              <dd><SourcedTextList values={values} /></dd>
-            </div>
-          ))}
-        </dl>
-      ) : <p className="empty-note">No document details were extracted.</p>}
-      {notes.length > 0 && <section className="notes" aria-labelledby="notes-title">
-        <h3 id="notes-title">Document-wide notes</h3>
-        <NotesList notes={notes} />
-      </section>}
-    </section>
-  )
+function PageDetails({ details, notes, page }: { details: CompletedDocument['details']; notes: DocumentNote[]; page: number }) {
+  const fields = Object.entries(details)
+    .map(([key, values]) => [key, values.filter((value) => value.evidence.page === page)] as const)
+    .filter(([, values]) => values.length > 0)
+
+  return <section className="document-details" aria-labelledby={`details-${page}-title`}>
+    <h4 id={`details-${page}-title`}>Details</h4>
+    {fields.length > 0 ? <dl className="details-list">
+      {fields.map(([key, values]) => <div className="detail-field" key={key}>
+        <dt>{displayLabel(key)}</dt>
+        <dd><SourcedTextList values={values} /></dd>
+      </div>)}
+    </dl> : <p className="empty-note">No details were extracted for this page.</p>}
+    {notes.length > 0 && <section className="notes" aria-label={`Notes for page ${page}`}><h5>Notes</h5><NotesList notes={notes} /></section>}
+  </section>
 }
 
 function ItemList({ items, label = 'Extracted items' }: { items: CompletedDocument['items']; label?: string }) {
@@ -196,6 +191,7 @@ function ItemList({ items, label = 'Extracted items' }: { items: CompletedDocume
 
 function PageGroupedItems({ document }: { document: CompletedDocument }) {
   const pages = Array.from(new Set([
+    ...Object.values(document.details).flatMap((values) => values.map((value) => value.evidence.page)),
     ...document.items.map((item) => item.evidence.page),
     ...document.notes.map(notePage).filter((page): page is number => page !== undefined),
   ])).sort((a, b) => a - b)
@@ -206,11 +202,16 @@ function PageGroupedItems({ document }: { document: CompletedDocument }) {
       const items = document.items.filter((item) => item.evidence.page === page)
       const notes = document.notes.filter((note) => notePage(note) === page)
       return <section className="page-group" key={page} aria-labelledby={`page-${page}-title`}>
-        <h3 id={`page-${page}-title`}>Page {page} <span className="count">{items.length} {items.length === 1 ? 'item' : 'items'}</span></h3>
+        <h3 id={`page-${page}-title`}>Page {page}</h3>
+        <PageDetails details={document.details} notes={notes} page={page} />
+        <h4 className="page-items-heading">Items <span className="count">{items.length}</span></h4>
         {items.length ? <ItemList items={items} label={`Extracted items on page ${page}`} /> : <p className="empty-note">No line items on this page.</p>}
-        {notes.length > 0 && <section className="page-notes" aria-label={`Notes for page ${page}`}><NotesList notes={notes} /></section>}
       </section>
     })}
+    {document.notes.some((note) => notePage(note) === undefined) && <section className="unpaged-notes" aria-label="Notes without page reference">
+      <h3>Notes without page reference</h3>
+      <NotesList notes={document.notes.filter((note) => notePage(note) === undefined)} />
+    </section>}
     {pages.length === 0 && <ItemList items={[]} />}
   </section>
 }
@@ -246,8 +247,7 @@ function DocumentPage() {
       )}
       {document.data?.status === 'completed' && (
         <>
-          <p className="complete-note" role="status">Review complete. Extracted items and document details are listed below.</p>
-          <DocumentDetails details={document.data.details} notes={document.data.notes.filter((note) => notePage(note) === undefined)} />
+          <p className="complete-note" role="status">Review complete. Extracted items and page details are listed below.</p>
           <PageGroupedItems document={document.data} />
         </>
       )}

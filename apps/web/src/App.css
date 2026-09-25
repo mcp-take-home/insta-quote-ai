@@ -167,6 +167,22 @@ input[type='file']::file-selector-button {
   background: #f1f5ef;
 }
 
+.document-details > h4,
+.notes h5,
+.unpaged-notes h3,
+.page-items-heading {
+  margin: 0 0 12px;
+  color: #294e41;
+  font-size: 15px;
+}
+
+.page-items-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 .details-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -252,7 +268,7 @@ input[type='file']::file-selector-button {
   font-size: 17px;
 }
 
-.page-notes {
+.unpaged-notes {
   margin-top: 12px;
 }
 
@@ -358,7 +374,7 @@ input[type='file']::file-selector-button {
 }
 
 .items-table .item-error > * {
-  background: #fff1ee;
+  background: #fff7f5;
   color: #7b2c22;
 }
 
