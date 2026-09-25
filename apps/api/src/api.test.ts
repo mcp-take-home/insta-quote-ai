@@ -143,4 +143,24 @@ describe("document API", () => {
     expect(completed.details["Ordered by"]?.[0]?.value).toBe("S. Prasad");
     expect(completed.notes.some((note) => note.error)).toBe(true);
   });
+
+  test.skipIf(!sampleAvailable)("uploads all supplied PDFs and returns page-scoped items through the API", async () => {
+    const expected = { "KBS-10234": 5, "KBS-10241": 4, "KBS-10255": 4, "KBS-10262": 3, "KBS-10270": 4, "KBS-DR118": 24 };
+    for (const [name, count] of Object.entries(expected)) {
+      const bytes = await readFile(resolve(import.meta.dir, `../../../../data/${name}.pdf`));
+      const response = await upload(new File([new Uint8Array(bytes).buffer as ArrayBuffer], `${name}.pdf`, { type: "application/pdf" }));
+      expect(response.status).toBe(202);
+      const { id } = await response.json() as { id: string };
+      expect(await processNextJob(database)).toBe(true);
+      const completed = await (await app.request(`/api/docs/${id}`)).json() as DocumentResponse;
+      expect(completed.status).toBe("completed");
+      if (completed.status !== "completed") continue;
+      expect(completed.items).toHaveLength(count);
+      if (name === "KBS-DR118") {
+        expect(Array.from({ length: 8 }, (_, page) => completed.items.filter((item) => item.evidence.page === page + 1).length)).toEqual(Array(8).fill(3));
+        expect(completed.items.filter((item) => item.error).map((item) => item.evidence.page)).toEqual([4, 4, 4]);
+      }
+      if (name === "KBS-10241" || name === "KBS-10255") expect(completed.items.every((item) => item.error)).toBe(true);
+    }
+  }, 90_000);
 });
