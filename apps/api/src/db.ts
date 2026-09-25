@@ -19,5 +19,13 @@ export function openDatabase(path: string) {
 export type OpenDatabase = ReturnType<typeof openDatabase>;
 
 export function recoverProcessingJobs(db: OpenDatabase["db"]) {
-  return db.update(documents).set({ status: "queued", updatedAt: new Date().toISOString() }).where(eq(documents.status, "processing")).run();
+  const now = new Date().toISOString();
+  const interrupted = db.update(documents).set({ status: "queued", updatedAt: now }).where(eq(documents.status, "processing")).run();
+  const obsolete = db.select({ id: documents.id, resultJson: documents.resultJson }).from(documents)
+    .where(eq(documents.status, "completed")).all()
+    .filter((row) => row.resultJson?.includes("This row appears on a summary page"));
+  for (const row of obsolete) {
+    db.update(documents).set({ status: "queued", resultJson: null, errorMessage: null, updatedAt: now }).where(eq(documents.id, row.id)).run();
+  }
+  return interrupted;
 }

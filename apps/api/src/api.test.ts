@@ -125,6 +125,40 @@ describe("document API", () => {
     expect(database.db.select({ status: documents.status }).from(documents).where(eq(documents.id, id)).get()?.status).toBe("queued");
   });
 
+  test("reprocesses completed results rejected by the old page-type rule", async () => {
+    const response = await upload();
+    const { id } = await response.json() as { id: string };
+    const oldResult = {
+      pageCount: 8,
+      ...result,
+      notes: [{
+        value: "Framing timber lot 5-1",
+        page: 5,
+        error: { code: "UNVERIFIABLE_VALUE", message: "This row appears on a summary page, so it was not counted as a delivery item." },
+      }],
+      items: [],
+    };
+    database.db.update(documents).set({ status: "completed", resultJson: JSON.stringify(oldResult) }).where(eq(documents.id, id)).run();
+
+    recoverProcessingJobs(database.db);
+    expect(database.db.select({ status: documents.status, resultJson: documents.resultJson }).from(documents).where(eq(documents.id, id)).get()).toEqual({ status: "queued", resultJson: null });
+
+    const currentResult = {
+      pageCount: 8,
+      details: {},
+      notes: [],
+      items: [{ description: "Framing timber lot 5-1", evidence: { page: 5, line: 7, sourceText: "1 Framing timber lot 5-1 10 length $16.00 $160.00" }, error: { code: "MISSING_LINE_TOTAL", message: "Needs review." } }],
+    };
+    expect(await processNextJob(database, async () => currentResult)).toBe(true);
+    const completed = await (await app.request(`/api/docs/${id}`)).json() as DocumentResponse;
+    expect(completed.status).toBe("completed");
+    if (completed.status === "completed") {
+      expect(completed.items).toHaveLength(1);
+      expect(completed.items[0]).toMatchObject({ description: "Framing timber lot 5-1", evidence: { page: 5 }, error: { code: "MISSING_LINE_TOTAL" } });
+      expect(completed.notes).toEqual([]);
+    }
+  });
+
   test.skipIf(!sampleAvailable)("uploads and processes a supplied sample PDF through the real extractor", async () => {
     const sample = await readFile(samplePath);
     const file = new File([new Uint8Array(sample).buffer as ArrayBuffer], "KBS-10270.pdf", { type: "application/pdf" });
