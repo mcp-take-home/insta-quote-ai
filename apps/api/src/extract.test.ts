@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { classifyRows, documentTotalContradicts, extractDetails, extractDocument, multiPageTotalNote } from "./extract";
+import { DocumentResponseSchema } from "@insta-quote/shared";
 import type { PdfRow } from "./pdf";
 
 function row(pageNumber: number, y: number, cells: Array<[number, string]>): PdfRow {
@@ -136,6 +137,8 @@ const sample = (name: string) => Bun.file(new URL(`../../../../data/${name}.pdf`
 const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(name).exists()))).every(Boolean);
 
 test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and reports document contradictions", async () => {
+  const parsedSamples = await Promise.all(sampleNames.map(async (name, index) => DocumentResponseSchema.parse({ id: `sample-${index}`, status: "completed", ...await extractDocument(await sample(name).arrayBuffer()) })));
+  expect(parsedSamples).toHaveLength(6);
   const result = await extractDocument(await sample("KBS-10270").arrayBuffer());
   expect(result.items).toHaveLength(4);
   expect(result.details).toMatchObject({ "Document No": [{ value: "KBS-10270", evidence: { page: 1, line: 3 } }], "Delivered to": [{ value: "Site 6, Matai Grove" }], "Ordered by": [{ value: "S. Prasad" }] });
@@ -157,15 +160,28 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
   expect(palletConflict.notes.find((note) => note.error?.code === "CONFLICTING_VALUES")).toMatchObject({ page: 1, lines: [7, 13] });
 
   const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
-  expect(deliveryRun.items).toHaveLength(21);
+  expect(deliveryRun.items).toHaveLength(9);
   const acceptedRunItems = deliveryRun.items.filter((item) => item.evidence.page <= 3);
-  const refusedRunItems = deliveryRun.items.filter((item) => item.evidence.page >= 5 && item.evidence.page <= 8);
   expect(acceptedRunItems).toHaveLength(9);
-  expect(refusedRunItems).toHaveLength(12);
-  expect(refusedRunItems.every((item) => item.description && item.evidence.line && item.evidence.sourceText && item.error?.message && !item.quantity && !item.unitPrice && !item.lineTotal)).toBe(true);
+  const refusedRunNotes = deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE");
+  expect(refusedRunNotes).toHaveLength(12);
+  expect(refusedRunNotes.map(({ value, evidence }) => [evidence?.page, evidence?.line, value, evidence?.sourceText])).toEqual([
+    [5, 7, "Framing timber lot 5-1", "Framing timber lot 5-1"], [5, 8, "Framing timber lot 5-2", "Framing timber lot 5-2"], [5, 9, "Framing timber lot 5-3", "Framing timber lot 5-3"],
+    [6, 7, "Framing timber lot 6-1", "Framing timber lot 6-1"], [6, 8, "Framing timber lot 6-2", "Framing timber lot 6-2"], [6, 9, "Framing timber lot 6-3", "Framing timber lot 6-3"],
+    [7, 7, "Framing timber lot 7-1", "Framing timber lot 7-1"], [7, 8, "Framing timber lot 7-2", "Framing timber lot 7-2"], [7, 9, "Framing timber lot 7-3", "Framing timber lot 7-3"],
+    [8, 7, "Framing timber lot 8-1", "Framing timber lot 8-1"], [8, 8, "Framing timber lot 8-2", "Framing timber lot 8-2"], [8, 9, "Framing timber lot 8-3", "Framing timber lot 8-3"],
+  ]);
+  expect(refusedRunNotes.every((note) => note.error?.message && note.error.message.length > 0)).toBe(true);
   expect(deliveryRun.notes).toContainEqual(expect.objectContaining({ value: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave", evidence: { page: 1, line: 2, sourceText: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave" } }));
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE").every((note) => note.line === 2)).toBe(true);
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE").every((note) => note.sourceText?.startsWith("Multi-Site Delivery Run"))).toBe(true);
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toHaveLength(1);
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE")).toHaveLength(4);
+  expect(deliveryRun.details["Document No"]).toMatchObject([{ value: "KBS-DR118", evidence: { page: 1, line: 3 } }]);
+  expect(deliveryRun.details.Date).toMatchObject([{ value: "24 August 2026", evidence: { page: 1, line: 4 } }]);
+  expect(deliveryRun.details["Document No"]).toHaveLength(1);
+  expect(deliveryRun.details.Date).toHaveLength(1);
+  expect(deliveryRun.notes.filter((note) => note.value === "Kowhai Building Supplies Ltd")).toHaveLength(1);
+  expect(deliveryRun.notes.filter((note) => /^Page \d+ of \d+$/.test(note.value))).toHaveLength(0);
+  expect(deliveryRun.notes.map((note) => note.value)).toContain("Multi-Site Delivery Run 118 - Site 2 of 4 - Ranfurly Ave");
+  expect(deliveryRun.notes.map((note) => note.value)).toContain("Multi-Site Delivery Run 118 - Site 3 of 4 - Beach Road");
+  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE").some((note) => note.line === 2)).toBe(false);
+  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toMatchObject([{ page: 4 }]);
+  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE")).toHaveLength(12);
 });

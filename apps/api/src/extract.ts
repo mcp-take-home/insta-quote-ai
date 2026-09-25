@@ -24,13 +24,27 @@ function sourcedRow(row: PdfRow, value: string): SourcedText { return { value, e
 export function extractDetails(pages: Array<{ pageNumber: number; rows: PdfRow[]; tableLines?: Set<number> }>): Details {
   const details: Record<string, SourcedText[]> = Object.create(null);
   const notes: Note[] = [];
+  const detailValues = new Map<string, Set<string>>();
+  const noteValues = new Set<string>();
   for (const page of pages) for (const row of contentRows(page.rows)) {
     if (page.tableLines?.has(row.lineNumber)) continue;
     const text = context(row);
+    if (/^page\s+\d+\s+of\s+\d+$/i.test(text)) continue;
     if (/^(?:document\s+)?total\s*:?\s*(?:(?:(?:NZ|US|AU)\s*\$)|(?:NZD|USD|AUD)\s*|[$€£])?\s*(?:\(-?\d[\d,]*(?:\.\d{1,2})?\)|-?\d[\d,]*(?:\.\d{1,2})?)(?:\s*(?:NZD|USD|AUD))?$/i.test(text)) continue;
     const match = text.match(/^([^:]+?)\s*:\s*(.+)$/);
-    if (match) (details[match[1]!.trim()] ??= []).push(sourcedRow(row, match[2]!.trim()));
-    else notes.push({ value: text, evidence: rowEvidence(row) });
+    if (match) {
+      const label = match[1]!.trim();
+      const value = match[2]!.trim();
+      const seen = detailValues.get(label) ?? new Set<string>();
+      if (!seen.has(value)) {
+        (details[label] ??= []).push(sourcedRow(row, value));
+        seen.add(value);
+        detailValues.set(label, seen);
+      }
+    } else if (!noteValues.has(text)) {
+      notes.push({ value: text, evidence: rowEvidence(row) });
+      noteValues.add(text);
+    }
   }
   return { details, notes };
 }
@@ -199,15 +213,22 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
       const result = classifyRows(rows);
       detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
       const pageType = /summary/i.test(heading) ? "summary" : "returns, credit, or acceptance";
-      const itemMessage = pageType === "summary"
-        ? "This item appears on a summary page, so its values were not accepted to avoid counting the same delivery twice."
-        : "This item appears on a returns, credit, or acceptance page, so its values were not accepted as new delivery items.";
-      items.push(...result.items.map((item) => ({ ...(item.description ? { description: item.description } : {}), evidence: item.evidence, error: { code: "UNVERIFIABLE_VALUE" as const, message: itemMessage } })));
-      const message = /summary/i.test(heading)
-        ? "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice."
-        : "This returns, credit, or acceptance page repeats delivery lines in a different context, so its rows were skipped to avoid counting them as new items.";
-      const sourceRow = rows.slice(0, 6).find((row) => excludedPage.test(context(row)));
-      notes.push({ value: message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: sourceRow ? context(sourceRow) : heading, error: { code: "UNVERIFIABLE_VALUE", message } });
+      const rowMessage = pageType === "summary"
+        ? "This row appears on a summary page, so it was not counted as a delivery item."
+        : "This row appears on a returns, credit, or acceptance page, so it was not counted as a delivery item.";
+      if (result.items.length) {
+        notes.push(...result.items.map((item) => ({
+          value: item.description ?? rowMessage,
+          evidence: item.evidence,
+          error: { code: "UNVERIFIABLE_VALUE", message: rowMessage },
+        })));
+      } else {
+        const message = /summary/i.test(heading)
+          ? "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice."
+          : "This returns, credit, or acceptance page repeats delivery lines in a different context, so its rows were skipped to avoid counting them as new items.";
+        const sourceRow = rows.slice(0, 6).find((row) => excludedPage.test(context(row)));
+        notes.push({ value: message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: sourceRow ? context(sourceRow) : heading, error: { code: "UNVERIFIABLE_VALUE", message } });
+      }
       continue;
     }
     const result = classifyRows(rows);

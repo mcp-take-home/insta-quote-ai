@@ -251,6 +251,13 @@ input[type='file']::file-selector-button {
   min-width: 0;
 }
 
+.notes-list li.note-error {
+  padding: 12px;
+  border: 1px solid #e0a49a;
+  border-radius: 8px;
+  background: #fff3f1;
+}
+
 .note-value {
   margin-bottom: 4px;
   color: #294e41;
