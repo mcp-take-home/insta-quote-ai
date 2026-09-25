@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyRows, extractDetails, extractDocument } from "./extract";
+import { classifyOcrRows, classifyRows, extractDetails, extractDocument } from "./extract";
 import { DocumentResponseSchema } from "@insta-quote/shared";
 import { extractPdfPages, type PdfRow } from "./pdf";
 
@@ -81,6 +81,15 @@ describe("classifyRows inline row errors", () => {
     expect(extractDetails([{ pageNumber: 2, rows: footer, tableLines: result.tableLines }]).details.Total?.[0]?.value).toBe("$10.00");
   });
 
+  test("keeps a wrapped description with its table item", () => {
+    const rows = [...fixture(), row(2, 60, [[71, "delivery to rear yard"]]), row(2, 40, [[71, "before noon"]])];
+    const result = classifyRows(rows);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.description).toBe("Timber delivery to rear yard before noon");
+    expect(result.items[0]?.evidence.sourceText).toContain("delivery to rear yard\nbefore noon");
+    expect(extractDetails([{ pageNumber: 2, rows, tableLines: result.tableLines }]).details.Text).toBeUndefined();
+  });
+
   test("finds likely headerless item rows without treating numbered prose as items", () => {
     const rows = [row(1, 100, [[0, "1"], [20, "Timber"], [100, "2"], [140, "$5.00"]]), row(1, 80, [[0, "2026"], [30, "forecast for next year"]])];
     const result = classifyRows(rows);
@@ -133,6 +142,19 @@ test("keeps non-table details on each source page, including repeated text and t
     ["Kowhai Building Supplies Ltd", 2], ["Page 2 of 2", 2],
   ]);
   expect(result.notes).toEqual([]);
+});
+
+test("keeps an OCR numbered row with no description in the item table", () => {
+  const rows = [
+    row(4, 100, [[43, "Item"], [71, "Description"], [326, "Qty"]]),
+    row(4, 80, [[43, "1"], [326, "2"]]),
+  ];
+  const result = classifyOcrRows(rows);
+  expect(result.items).toHaveLength(1);
+  expect(result.items[0]?.description).toBeUndefined();
+  expect(result.items[0]?.error?.code).toBe("OCR_REQUIRES_VERIFICATION");
+  expect(result.tableLines.has(rows[1]!.lineNumber)).toBe(true);
+  expect(extractDetails([{ pageNumber: 4, rows, tableLines: result.tableLines }]).details.Text).toBeUndefined();
 });
 
 const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];

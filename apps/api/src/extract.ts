@@ -88,6 +88,7 @@ export function classifyRows(rows: PdfRow[]): Classification {
   }
   const items: ExtractedItem[] = [];
   const tableLines = new Set<number>();
+  let continuationLine: number | undefined;
   const errorItem = (row: PdfRow, code: string, message: string, description?: string): ExtractedItem => {
     const quantityTokens = cellTokens(row, header, "quantity");
     const priceTokens = cellTokens(row, header, "unitPrice");
@@ -110,6 +111,16 @@ export function classifyRows(rows: PdfRow[]): Classification {
     const candidateItem = itemCell.length > 0 && /^\d+[.)]?$/.test(clean(itemCell[0]!));
     if (!candidateItem) {
       const valueCellCount = (["quantity", "unitPrice", "lineTotal"] as Column[]).filter((column) => cellTokens(row, header, column).length > 0).length;
+      const previous = items.at(-1);
+      if (!itemCell.length && description && valueCellCount === 0 && previous && (previous.evidence.line === row.lineNumber - 1 || continuationLine === row.lineNumber - 1)) {
+        const priorContext = previous.evidence.contextText ?? previous.evidence.sourceText;
+        previous.description = `${previous.description ? `${previous.description} ` : ""}${description}`;
+        previous.evidence.sourceText = `${previous.evidence.sourceText}\n${description}`;
+        previous.evidence.contextText = `${priorContext}\n${allText}`;
+        tableLines.add(row.lineNumber);
+        continuationLine = row.lineNumber;
+        continue;
+      }
       if (description && valueCellCount > 0) {
         tableLines.add(row.lineNumber);
         items.push(errorItem(row, "INVALID_ITEM_NUMBER", "This line has item details, but its item number is missing or unclear.", description));
@@ -151,7 +162,7 @@ export function classifyRows(rows: PdfRow[]): Classification {
   return { items, tableLines };
 }
 
-function classifyOcrRows(rows: PdfRow[]): Classification {
+export function classifyOcrRows(rows: PdfRow[]): Classification {
   const header = rows.find((row) => row.tokens.some((token) => /^item$/i.test(clean(token))) && row.tokens.some((token) => /^description$/i.test(clean(token))));
   if (!header) return { items: [], tableLines: new Set() };
   const itemStart = header.tokens.find((token) => /^item$/i.test(clean(token)))!.x;
@@ -161,10 +172,11 @@ function classifyOcrRows(rows: PdfRow[]): Classification {
     const itemNumber = row.tokens[0];
     if (!itemNumber || itemNumber.x > itemStart + 20 || !/^\d+[.)]?$/.test(clean(itemNumber))) return [];
     const description = row.tokens.filter((token) => token.x > itemNumber.x && token.x < quantityStart).map(clean).join(" ");
-    if (!description) return [];
-    const message = "OCR found this item row, but its quantities and prices could not be verified from selectable PDF text.";
+    const message = description
+      ? "OCR found this item row, but its quantities and prices could not be verified from selectable PDF text."
+      : "OCR found a numbered table row, but its description and numeric values could not be verified.";
     return [{
-      description,
+      ...(description ? { description } : {}),
       evidence: rowEvidence(row),
       error: { code: "OCR_REQUIRES_VERIFICATION", message },
     }];
