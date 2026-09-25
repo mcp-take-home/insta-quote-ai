@@ -169,6 +169,20 @@ test("keeps an OCR numbered row with no description in the item table", () => {
   expect(extractDetails([{ pageNumber: 4, rows, tableLines: result.tableLines }]).details.Text).toBeUndefined();
 });
 
+test("keeps numbered OCR item rows when OCR misses the table header", () => {
+  const rows = [
+    row(5, 80, [[43, "1"], [71, "Framing timber lot 5-1"], [326, "12"], [428, "$8.00"]]),
+    row(5, 60, [[43, "2"], [71, "Framing timber lot 5-2"], [326, "8"], [428, "$9.00"]]),
+    row(5, 40, [[0, "Page 5 of 8"]]),
+  ];
+  const result = classifyOcrRows(rows);
+  expect(result.items).toHaveLength(2);
+  expect(result.items.map((item) => item.description)).toEqual(["Framing timber lot 5-1 12 $8.00", "Framing timber lot 5-2 8 $9.00"]);
+  expect(result.items.every((item) => item.error?.code === "OCR_REQUIRES_VERIFICATION")).toBe(true);
+  expect(result.tableLines.has(rows[2]!.lineNumber)).toBe(false);
+  expect(extractDetails([{ pageNumber: 5, rows, tableLines: result.tableLines }]).details.Text?.[0]?.value).toBe("Page 5 of 8");
+});
+
 const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];
 const sample = (name: string) => Bun.file(new URL(`../../../../data/${name}.pdf`, import.meta.url));
 const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(name).exists()))).every(Boolean);

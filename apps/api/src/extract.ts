@@ -163,7 +163,16 @@ export function classifyRows(rows: PdfRow[]): Classification {
 
 export function classifyOcrRows(rows: PdfRow[]): Classification {
   const header = rows.find((row) => row.tokens.some((token) => /^item$/i.test(clean(token))) && row.tokens.some((token) => /^description$/i.test(clean(token))));
-  if (!header) return { items: [], tableLines: new Set() };
+  if (!header) {
+    const fallback = classifyRows(rows);
+    return {
+      items: fallback.items.map((item) => ({
+        ...item,
+        error: { code: "OCR_REQUIRES_VERIFICATION", message: "OCR found this numbered row, but its item columns could not be identified safely." },
+      })),
+      tableLines: fallback.tableLines,
+    };
+  }
   const itemStart = header.tokens.find((token) => /^item$/i.test(clean(token)))!.x;
   const quantityStart = header.tokens.find((token) => /^qty$/i.test(clean(token)))?.x ?? Infinity;
   const items = rows.flatMap((row) => {
