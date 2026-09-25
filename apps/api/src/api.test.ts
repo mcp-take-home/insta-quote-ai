@@ -157,6 +157,7 @@ describe("document API", () => {
       if (completed.status !== "completed") continue;
       expect(completed.items).toHaveLength(count);
       if (name === "KBS-DR118") {
+        expect(completed.pageCount).toBe(8);
         expect(Array.from({ length: 8 }, (_, page) => completed.items.filter((item) => item.evidence.page === page + 1).length)).toEqual(Array(8).fill(3));
         expect(completed.items.filter((item) => item.error).map((item) => item.evidence.page)).toEqual([4, 4, 4]);
       }

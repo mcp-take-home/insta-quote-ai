@@ -173,6 +173,7 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps items and page details 
   expect(result.notes.some((note) => note.error?.code === "ARITHMETIC_CONTRADICTION")).toBe(false);
 
   const unreadable = await extractDocument(await sample("KBS-10241").arrayBuffer());
+  expect(unreadable.pageCount).toBe(1);
   expect(unreadable.items).toHaveLength(4);
   expect(unreadable.items.every((item) => item.evidence.page === 1 && item.error && !item.quantity && !item.unitPrice && !item.lineTotal)).toBe(true);
   expect(unreadable.items.map((item) => item.description)).toEqual([
@@ -189,6 +190,7 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps items and page details 
   expect(palletConflict.notes.some((note) => note.error?.code === "CONFLICTING_VALUES")).toBe(false);
 
   const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
+  expect(deliveryRun.pageCount).toBe(8);
   expect(deliveryRun.items).toHaveLength(24);
   expect(Object.fromEntries(Array.from({ length: 8 }, (_, index) => [index + 1, deliveryRun.items.filter((item) => item.evidence.page === index + 1).length]))).toEqual({ 1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3 });
   const ocrItems = [...unreadable.items, ...deliveryRun.items.filter((item) => item.evidence.page === 4)];

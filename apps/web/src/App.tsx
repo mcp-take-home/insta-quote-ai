@@ -191,6 +191,7 @@ function ItemList({ items, label = 'Extracted items' }: { items: CompletedDocume
 
 function PageGroupedItems({ document }: { document: CompletedDocument }) {
   const pages = Array.from(new Set([
+    ...Array.from({ length: document.pageCount ?? 0 }, (_, index) => index + 1),
     ...Object.values(document.details).flatMap((values) => values.map((value) => value.evidence.page)),
     ...document.items.map((item) => item.evidence.page),
     ...document.notes.map(notePage).filter((page): page is number => page !== undefined),

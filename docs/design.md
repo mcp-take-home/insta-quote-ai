@@ -14,7 +14,7 @@ Completed results contain `items`, dynamic `details`, and `notes`. Table rows be
 
 ## API and interface
 
-Uploads are limited to 15 MB and checked for multipart input, a PDF filename or content type, and the `%PDF-` signature. The API returns `202` with the queued document ID before extraction runs. The browser uses a native file input, uploads multipart data, then polls the document route about once per second. The result view shows an items table and a details section for each source page. Error rows stay in their table with a pale highlight and inline message. Dynamic details, item values, and per-field source text remain visible.
+Uploads are limited to 15 MB and checked for multipart input, a PDF filename or content type, and the `%PDF-` signature. The API returns `202` with the queued document ID before extraction runs. The browser uses a native file input, uploads multipart data, then polls the document route about once per second. New completed results include `pageCount`; the result view shows an items table and a details section for every source page, including pages without extracted content. Older saved results can omit `pageCount`. Error rows stay in their table with a pale highlight and inline message. Dynamic details, item values, and per-field source text remain visible.
 
 ## Limits
 

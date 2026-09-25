@@ -184,7 +184,7 @@ export function classifyOcrRows(rows: PdfRow[]): Classification {
   return { items, tableLines: new Set([header.lineNumber, ...items.map((item) => item.evidence.line!)]) };
 }
 
-export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: ExtractedItem[] } & Details> {
+export async function extractDocument(buffer: ArrayBuffer): Promise<{ pageCount: number; items: ExtractedItem[] } & Details> {
   const pages = await extractPdfPages(buffer);
   const items: ExtractedItem[] = [];
   const notes: Note[] = [];
@@ -220,5 +220,5 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
   }
 
   const extractedDetails = extractDetails(detailPages);
-  return { items, ...extractedDetails, notes: [...extractedDetails.notes, ...notes] };
+  return { pageCount: pages.length, items, ...extractedDetails, notes: [...extractedDetails.notes, ...notes] };
 }

@@ -47,6 +47,7 @@ export const DocumentResponseSchema = z.discriminatedUnion("status", [
   z.object({
     id: DocumentIdSchema,
     status: z.literal("completed"),
+    pageCount: z.number().int().positive().optional(),
     items: z.array(ExtractedItemSchema),
     details: z.record(z.string(), z.array(SourcedTextSchema)),
     notes: z.array(NoteSchema),

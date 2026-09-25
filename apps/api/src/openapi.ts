@@ -64,7 +64,7 @@ export const openApiDocument = {
       },
       CompletedDocument: {
         type: "object", required: ["id", "status", "items", "details", "notes"],
-        properties: { id: { type: "string" }, status: { const: "completed" }, items: { type: "array", items: { $ref: "#/components/schemas/ExtractedItem" } }, details: { type: "object", additionalProperties: { type: "array", items: { $ref: "#/components/schemas/SourcedText" } } }, notes: { type: "array", items: { $ref: "#/components/schemas/Note" } } },
+        properties: { id: { type: "string" }, status: { const: "completed" }, pageCount: { type: "integer", minimum: 1, description: "PDF page count for new results; older saved results may omit it." }, items: { type: "array", items: { $ref: "#/components/schemas/ExtractedItem" } }, details: { type: "object", additionalProperties: { type: "array", items: { $ref: "#/components/schemas/SourcedText" } } }, notes: { type: "array", items: { $ref: "#/components/schemas/Note" } } },
       },
     },
   },
