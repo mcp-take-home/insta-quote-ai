@@ -18,7 +18,7 @@ Implemented Task 1 on branch `fix/page-grouped-24-items`. The completed-document
 - `bun run build` — passed.
 - `bun test` — passed (25 tests, 0 failures).
 - `git diff --check` — passed.
-- Local web app opened in the in-app browser. The browser file chooser rejected automated assignment of `../data/KBS-10270.pdf`, so the completed-document visual flow and copy/download behavior could not be exercised in-browser. The attempt was stopped without bypassing the browser permission.
+- Local web app opened in the in-app browser. The browser file chooser rejected automated assignment of the KBS-10270 sample PDF, so the completed-document visual flow and copy/download behavior could not be exercised in-browser. The attempt was stopped without bypassing the browser permission.
 
 ## Self-review
 

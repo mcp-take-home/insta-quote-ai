@@ -157,7 +157,7 @@ test("keeps non-table details on each source page, including repeated text and t
 });
 
 const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];
-const sample = (name: string) => Bun.file(new URL(`../../../../data/${name}.pdf`, import.meta.url));
+const sample = (name: string) => Bun.file(new URL(`../../../data/${name}.pdf`, import.meta.url));
 const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(name).exists()))).every(Boolean);
 
 test.skipIf(!sampleDataAvailable)("extractDocument keeps items and page details for all supplied PDFs", async () => {

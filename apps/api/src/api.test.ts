@@ -24,7 +24,8 @@ const result = {
     lineTotal: { value: 20, evidence: { page: 1, sourceText: "$20.00" } },
   }],
 };
-const samplePath = resolve(import.meta.dir, "../../../../data/KBS-10270.pdf");
+const sampleDir = resolve(import.meta.dir, "../../../data");
+const samplePath = resolve(sampleDir, "KBS-10270.pdf");
 const sampleAvailable = await Bun.file(samplePath).exists();
 
 describe("document API", () => {
@@ -181,7 +182,7 @@ describe("document API", () => {
   test.skipIf(!sampleAvailable)("uploads all supplied PDFs and returns page-scoped items through the API", async () => {
     const expected = { "KBS-10234": 5, "KBS-10241": 0, "KBS-10255": 4, "KBS-10262": 3, "KBS-10270": 4, "KBS-DR118": 21 };
     for (const [name, count] of Object.entries(expected)) {
-      const bytes = await readFile(resolve(import.meta.dir, `../../../../data/${name}.pdf`));
+      const bytes = await readFile(resolve(sampleDir, `${name}.pdf`));
       const response = await upload(new File([new Uint8Array(bytes).buffer as ArrayBuffer], `${name}.pdf`, { type: "application/pdf" }));
       expect(response.status).toBe(202);
       const { id } = await response.json() as { id: string };

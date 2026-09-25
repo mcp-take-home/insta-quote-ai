@@ -141,7 +141,7 @@ Run `bun run check`, `bun run --filter web lint`, and `bun run build` from `subm
 
 - [ ] **Step 5: Verify in browser**
 
-Start the API and web dev servers. Upload `../data/KBS-10270.pdf`, wait for completion, and verify:
+Start the API and web dev servers. Upload `data/KBS-10270.pdf`, wait for completion, and verify:
 
 1. **Extracted items** opens first and continues to show the existing page-grouped table.
 2. **JSON response** shows valid, formatted JSON with response `id`, `status`, `pageCount`, `items`, `details`, and `notes`.

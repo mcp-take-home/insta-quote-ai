@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Work only in `submission/`; do not edit `../data/` or `../test/`.
+- Work only in this repository; keep sample PDFs in `data/` and do not edit the sibling test project.
 - Preserve evidence: exact source text, 1-based page and line for rows and extracted numbers.
 - Keep successful rows when another page or row is refused.
 - No new dependency or response section.

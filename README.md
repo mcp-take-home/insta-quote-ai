@@ -16,7 +16,7 @@ Start the app with one command:
 bun run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). The API listens on port 3000; Vite forwards `/api` requests to it. The API creates `data/documents.sqlite` and `data/uploads/` on first run. It applies checked-in Drizzle migrations when the database opens. The supplied sample PDFs live in the sibling `../data/` directory. The sample API integration test uses `../data/KBS-10270.pdf` and skips itself if that file is absent. API reference: [http://localhost:3000/api/reference](http://localhost:3000/api/reference).
+Open [http://localhost:5173](http://localhost:5173). The API listens on port 3000; Vite forwards `/api` requests to it. The API uses `documents.sqlite` at the repository root and creates `data/uploads/` on first run. It applies checked-in Drizzle migrations when the database opens. The supplied sample PDFs live in `data/`. The sample API integration test uses `data/KBS-10270.pdf` and skips itself if that file is absent. API reference: [http://localhost:3000/api/reference](http://localhost:3000/api/reference).
 
 ## How it works
 

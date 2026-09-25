@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Work only in `submission/`; do not modify sibling `data/` or `test/`.
+- Work only in this repository; keep sample PDFs in `data/` and do not modify the sibling test project.
 - No page-type exclusion for item tables.
 - Every number needs page and exact available source text; no guessed numeric fields.
 - Uncertain rows remain in `items` with plain-language `error` for red table display.

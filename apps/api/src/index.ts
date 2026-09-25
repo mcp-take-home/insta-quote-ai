@@ -3,12 +3,12 @@ import { recoverProcessingJobs, openDatabase } from "./db";
 import { createApp } from "./app";
 import { startWorker } from "./worker";
 
-const dataDir = resolve(import.meta.dir, "../../../data");
-const database = openDatabase(resolve(dataDir, "documents.sqlite"));
+const rootDir = resolve(import.meta.dir, "../../..");
+const database = openDatabase(resolve(rootDir, "documents.sqlite"));
 recoverProcessingJobs(database.db);
 startWorker(database);
 
-const app = createApp(database, resolve(dataDir, "uploads"));
+const app = createApp(database, resolve(rootDir, "data/uploads"));
 export { app };
 
 if (import.meta.main) {
