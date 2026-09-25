@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Goal:** Surface every refused sample row with inline error and remove repeated document data.
+**Goal:** Surface refused sample rows without inflating delivery-item count and remove repeated document data.
 
 **Architecture:** Change existing extraction boundary only. Existing response schema, database JSON, and UI error-row styling carry result end to end.
 
@@ -18,7 +18,7 @@
 
 ---
 
-### Task 1: Refused rows on excluded pages
+### Task 1: Initial excluded-row visibility (superseded by Task 2)
 
 **Files:** Modify `apps/api/src/extract.ts`; test `apps/api/src/extract.test.ts`.
 
@@ -29,15 +29,16 @@
 - [ ] In excluded-page branch, classify table rows and append error-bearing copies of those rows to `items`, using page type in message; preserve description and row evidence, omit numeric fields. Keep table line exclusion for details. Avoid new parser or schema.
 - [ ] Run focused test and `bun run check`; record results; commit.
 
-### Task 2: Repeated metadata and sample audit
+### Task 2: Correct row classification, highlight refusals, deduplicate metadata
 
-**Files:** Modify `apps/api/src/extract.ts`, `README.md`, `docs/design.md`, `docs/implementation-plan.md`; test `apps/api/src/extract.test.ts`.
+**Files:** Modify `apps/api/src/extract.ts`, `apps/api/src/extract.test.ts`, `apps/web/src/App.css`, `README.md`, `docs/design.md`, `docs/implementation-plan.md`.
 
 **Interface:** `extractDetails(pages)` retains `{details, notes}`.
 
+- [ ] Replace Task 1's incorrect 21-item assertion with a failing visual-grounded assertion: nine readable delivery items on pages 1–3; twelve refusal notes, one per table row on pages 5–8 with description, page/line/source and plain-language `error`; page 4 retains unreadable-content note and no invented items. Add UI red treatment for note errors. Do not double-report same excluded-page refusal in a page-level note.
 - [ ] Add failing `KBS-DR118` assertion: `Document No: KBS-DR118` and date appear once, company heading appears once, page counters do not appear in notes; distinct site headings remain. All six sample results parse with `DocumentResponseSchema`; document-specific refusal behavior remains.
 - [ ] Run focused test; record failing result.
-- [ ] In `extractDetails`, retain first evidence for identical label/value pairs and identical plain note text. Skip page-counter-only lines. Do not collapse distinct labels, values, or error notes.
+- [ ] In `extractDocument`, emit contextual row refusals as error notes instead of items; remove duplicate page-level warning when rows were found. In `extractDetails`, retain first evidence for identical label/value pairs and identical plain note text. Skip page-counter-only lines. Do not collapse distinct labels, values, or error notes.
 - [ ] Update existing docs that claim repeated labels retain all values or excluded rows are only skipped. Run focused test, full `bun test`, `bun run check`, `bun run build`, and web lint; record results; commit.
 
 ### Task 3: PDF.js standard font data
