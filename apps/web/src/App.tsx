@@ -74,7 +74,7 @@ function UploadPage() {
       <header className="brand"><span className="brand-mark" aria-hidden="true">IQ</span><span>Insta Quote AI</span></header>
       <section className="intro" aria-labelledby="upload-title">
         <h1 id="upload-title">Turn a quote PDF into clear line items.</h1>
-      <p className="lede">Upload a quote PDF. Every extracted number comes with its page and source text; scanned rows and other uncertain values are marked for review.</p>
+      <p className="lede">Upload a quote PDF. Extracted values include their page and source text; uncertain table rows are marked for review.</p>
       </section>
       <form className="upload-form" onSubmit={submit}>
         <label htmlFor="pdf-file">Choose a PDF</label>

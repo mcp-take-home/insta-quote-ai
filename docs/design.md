@@ -10,7 +10,7 @@ The Bun workspace contains a Hono API, a React/Vite client, and a shared Zod con
 
 PDF.js reads positioned text tokens page by page. Tokens are grouped into 1-based visible text rows, then table columns are identified from a header and candidate rows are classified using their token positions. Numeric fields retain the exact PDF token text as `evidence.sourceText`, along with 1-based page and line references; row context is retained where useful. Extracted values are not synthesized: missing, ambiguous, invalid, or contradictory item values produce an inline item error.
 
-Completed results contain `items`, dynamic `details`, and `notes`. Table rows become items on every page, regardless of heading. Every non-table text row becomes a page-sourced detail: `Label: value` rows use their label, and unlabeled rows use `Text`. Identical values are collapsed only within the same page. Textless pages use local OCR to identify rows and remaining text; uncertain OCR item rows retain source evidence and an error, without trusted numeric fields. `notes` is reserved for unreadable-page errors. Document-level total and pallet reconciliation is not performed.
+Completed results contain `items`, dynamic `details`, and `notes`. Text-based table rows become items on every page, regardless of heading. Every other extractable text row becomes a page-sourced detail: `Label: value` rows use their label, and unlabeled rows use `Text`. Identical values are collapsed only within the same page. Image-only pages produce no extracted data and receive an unreadable-page note; OCR is out of scope. `notes` is reserved for unreadable-page errors. Document-level total and pallet reconciliation is not performed.
 
 ## API and interface
 
@@ -18,4 +18,4 @@ Uploads are limited to 15 MB and checked for multipart input, a PDF filename or 
 
 ## Limits
 
-Extraction expects a recognizable item, description, quantity, unit-price, and line-total table. Local OCR can identify rows on textless pages, but OCR-derived values remain uncertain and are not trusted. Unusual layouts and wrapped descriptions can produce row errors instead of inferred values. Storage and the worker are local to the API process. There is no backward-compatibility layer for older result shapes; the shared Zod schema is the current response contract.
+Extraction expects a recognizable item, description, quantity, unit-price, and line-total table. Image-only pages cannot be extracted. Unusual layouts and wrapped descriptions can produce row errors instead of inferred values. Storage and the worker are local to the API process. There is no backward-compatibility layer for older result shapes; the shared Zod schema is the current response contract.

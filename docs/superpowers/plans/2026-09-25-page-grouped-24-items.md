@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development task-by-task. Steps use checkbox syntax.
 
-**Goal:** Return all 24 `KBS-DR118` table rows as `items` and show results by page.
+**Goal:** Return every text-extractable `KBS-DR118` row as an item and show results by page. Image-only page produces no item data.
 
-**Architecture:** Reuse existing text-row classifier on every readable page. Add OCR fallback only for textless pages; mark OCR row values uncertain. Keep API schema and group result in React.
+**Architecture:** Reuse existing text-row classifier on every page with selectable PDF text. No OCR. Keep API schema and group results in React.
 
-**Tech Stack:** Bun, TypeScript, PDF.js, Tesseract.js, React.
+**Tech Stack:** Bun, TypeScript, PDF.js, React.
 
 ## Global Constraints
 
@@ -15,21 +15,20 @@
 - Every number needs page and exact available source text; no guessed numeric fields.
 - Uncertain rows remain in `items` with plain-language `error` for red table display.
 - Keep `items`, `details`, `notes` API shape; preserve valid rows when another page is unreadable.
-- Add dependencies with `bun add`; keep OCR local after install.
+- Image-only pages receive unreadable-page notes and no inferred values.
 - Run focused Bun tests, `bun run check`, and all-six sample API validation.
 
 ---
 
-### Task 1: OCR fallback and all-page item extraction
+### Task 1: Text extraction and all-page item extraction
 
 **Files:** Modify `apps/api/src/pdf.ts`, `apps/api/src/extract.ts`, `apps/api/src/extract.test.ts`, `apps/api/package.json`, `bun.lock` as needed. Create at most one small OCR helper if needed.
 
-**Interface:** `extractDocument(ArrayBuffer)` still returns `{items, details, notes}`. OCR items use existing `ExtractedItem` with `error`, without quantity/unitPrice/lineTotal. Page grouping uses `evidence.page`.
+**Interface:** `extractDocument(ArrayBuffer)` still returns `{items, details, notes}`. Page grouping uses `evidence.page`.
 
-- [ ] Capture RED tests: DR118 requires exactly 24 items, three on each page, page 4 three error-bearing rows, pages 5–8 in items and no page-type refusal notes. KBS-10241 image page requires four error-bearing rows if OCR identifies them. Keep four other sample counts/behavior and parse all six through `DocumentResponseSchema`.
-- [ ] Test OCR feasibility on sample page 4 before committing implementation; if local model/rendering cannot identify three rows, escalate with evidence rather than fabricate rows.
+- [ ] Capture RED tests: DR118 requires 21 items, three on pages 1–3 and 5–8, no page 4 items, and one unreadable-page note. KBS-10241 image page requires zero items and one unreadable-page note. Keep four other sample counts/behavior and parse all six through `DocumentResponseSchema`.
 - [ ] Remove `excludedPage` logic; classify all readable pages identically.
-- [ ] Render only textless PDF pages and run local OCR; identify numbered table lines by position/text. Include source/page/line evidence and plain-language error; omit uncertain numeric values. Preserve unreadable note if no rows found. No OCR on text pages.
+- [ ] Keep textless PDF pages empty and preserve unreadable-page notes.
 - [ ] Run focused tests, API checks, all-six sample extraction; commit backend deliverable only.
 
 ### Task 2: Page-grouped result view and documentation
@@ -40,7 +39,7 @@
 
 - [ ] Show an extracted-items table per source page, including refused rows in that table with existing red style and inline error. Show page heading and item count. Group page-located notes with the page; keep document-wide notes visible.
 - [ ] Keep dynamic details and their first-source evidence. No separate refusals section.
-- [ ] Update docs to explain all-page classification, OCR fallback/uncertainty, and page grouping. Remove now-wrong excluded-page claims.
+- [ ] Update docs to explain text-based all-page classification, image-only page limits, and page grouping. Remove page-type exclusions.
 - [ ] Run web check, lint/build, browser smoke for DR118 and KBS-10255; commit.
 
 ### Review

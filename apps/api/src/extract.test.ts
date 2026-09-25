@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyOcrRows, classifyRows, extractDetails, extractDocument } from "./extract";
+import { classifyRows, extractDetails, extractDocument } from "./extract";
 import { DocumentResponseSchema } from "@insta-quote/shared";
 import { extractPdfPages, type PdfRow } from "./pdf";
 
@@ -156,33 +156,6 @@ test("keeps non-table details on each source page, including repeated text and t
   expect(result.notes).toEqual([]);
 });
 
-test("keeps an OCR numbered row with no description in the item table", () => {
-  const rows = [
-    row(4, 100, [[43, "Item"], [71, "Description"], [326, "Qty"]]),
-    row(4, 80, [[43, "1"], [326, "2"]]),
-  ];
-  const result = classifyOcrRows(rows);
-  expect(result.items).toHaveLength(1);
-  expect(result.items[0]?.description).toBeUndefined();
-  expect(result.items[0]?.error?.code).toBe("OCR_REQUIRES_VERIFICATION");
-  expect(result.tableLines.has(rows[1]!.lineNumber)).toBe(true);
-  expect(extractDetails([{ pageNumber: 4, rows, tableLines: result.tableLines }]).details.Text).toBeUndefined();
-});
-
-test("keeps numbered OCR item rows when OCR misses the table header", () => {
-  const rows = [
-    row(5, 80, [[43, "1"], [71, "Framing timber lot 5-1"], [326, "12"], [428, "$8.00"]]),
-    row(5, 60, [[43, "2"], [71, "Framing timber lot 5-2"], [326, "8"], [428, "$9.00"]]),
-    row(5, 40, [[0, "Page 5 of 8"]]),
-  ];
-  const result = classifyOcrRows(rows);
-  expect(result.items).toHaveLength(2);
-  expect(result.items.map((item) => item.description)).toEqual(["Framing timber lot 5-1 12 $8.00", "Framing timber lot 5-2 8 $9.00"]);
-  expect(result.items.every((item) => item.error?.code === "OCR_REQUIRES_VERIFICATION")).toBe(true);
-  expect(result.tableLines.has(rows[2]!.lineNumber)).toBe(false);
-  expect(extractDetails([{ pageNumber: 5, rows, tableLines: result.tableLines }]).details.Text?.[0]?.value).toBe("Page 5 of 8");
-});
-
 const sampleNames = ["KBS-10234", "KBS-10241", "KBS-10255", "KBS-10262", "KBS-10270", "KBS-DR118"];
 const sample = (name: string) => Bun.file(new URL(`../../../../data/${name}.pdf`, import.meta.url));
 const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(name).exists()))).every(Boolean);
@@ -201,11 +174,8 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps items and page details 
 
   const unreadable = await extractDocument(await sample("KBS-10241").arrayBuffer());
   expect(unreadable.pageCount).toBe(1);
-  expect(unreadable.items).toHaveLength(4);
-  expect(unreadable.items.every((item) => item.evidence.page === 1 && item.error && !item.quantity && !item.unitPrice && !item.lineTotal)).toBe(true);
-  expect(unreadable.items.map((item) => item.description)).toEqual([
-    "Timber H3.2 90x45 framing 4.8m", "Timber H3.2 140x45 framing 4.8m", "Joist hangers 140mm galv", "Nail plates 100x100 galv",
-  ]);
+  expect(unreadable.items).toHaveLength(0);
+  expect(unreadable.notes.some((note) => note.page === 1 && note.error?.code === "UNREADABLE_CONTENT")).toBe(true);
 
   const noTotals = await extractDocument(await sample("KBS-10255").arrayBuffer());
   expect(noTotals.items).toHaveLength(4);
@@ -218,21 +188,17 @@ test.skipIf(!sampleDataAvailable)("extractDocument keeps items and page details 
 
   const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
   expect(deliveryRun.pageCount).toBe(8);
-  expect(deliveryRun.items).toHaveLength(24);
-  expect(Object.fromEntries(Array.from({ length: 8 }, (_, index) => [index + 1, deliveryRun.items.filter((item) => item.evidence.page === index + 1).length]))).toEqual({ 1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3 });
-  const ocrItems = [...unreadable.items, ...deliveryRun.items.filter((item) => item.evidence.page === 4)];
-  expect(ocrItems.every((item) => item.error && !item.quantity && !item.unitPrice && !item.lineTotal)).toBe(true);
-  expect(deliveryRun.items.filter((item) => item.evidence.page === 4).map((item) => item.description)).toEqual([
-    "Framing timber lot 4-1", "Framing timber lot 4-2", "Framing timber lot 4-3",
-  ]);
+  expect(deliveryRun.items).toHaveLength(21);
+  expect(Object.fromEntries(Array.from({ length: 8 }, (_, index) => [index + 1, deliveryRun.items.filter((item) => item.evidence.page === index + 1).length]))).toEqual({ 1: 3, 2: 3, 3: 3, 4: 0, 5: 3, 6: 3, 7: 3, 8: 3 });
+  expect(deliveryRun.notes.some((note) => note.page === 4 && note.error?.code === "UNREADABLE_CONTENT")).toBe(true);
   expect(deliveryRun.details.Text).toContainEqual(expect.objectContaining({ value: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave", evidence: { page: 1, line: 2, sourceText: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave" } }));
-  expect(deliveryRun.details["Document No"]?.map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-  expect(deliveryRun.details.Date?.map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-  expect(deliveryRun.details.Text?.filter((entry) => entry.value === "Kowhai Building Supplies Ltd").map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(deliveryRun.details["Document No"]?.map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 5, 6, 7, 8]);
+  expect(deliveryRun.details.Date?.map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 5, 6, 7, 8]);
+  expect(deliveryRun.details.Text?.filter((entry) => entry.value === "Kowhai Building Supplies Ltd").map((entry) => entry.evidence.page)).toEqual([1, 2, 3, 5, 6, 7, 8]);
   expect(deliveryRun.details.Text?.map((entry) => entry.value)).toContain("Multi-Site Delivery Run 118 - Site 2 of 4 - Ranfurly Ave");
   expect(deliveryRun.details.Text?.map((entry) => entry.value)).toContain("Multi-Site Delivery Run 118 - Site 3 of 4 - Beach Road");
 
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toHaveLength(0);
+  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toHaveLength(1);
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE" && /summary|returns|credit|acceptance/i.test(note.value))).toHaveLength(0);
 }, 30_000);
 

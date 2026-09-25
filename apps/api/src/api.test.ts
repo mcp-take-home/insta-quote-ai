@@ -125,17 +125,17 @@ describe("document API", () => {
     expect(database.db.select({ status: documents.status }).from(documents).where(eq(documents.id, id)).get()?.status).toBe("queued");
   });
 
-  test("reprocesses completed results rejected by the old page-type rule", async () => {
+  test("reprocesses completed results with old page-type refusals or OCR output", async () => {
     const response = await upload();
     const { id } = await response.json() as { id: string };
     const oldResult = {
       pageCount: 8,
       ...result,
-      notes: [{
-        value: "Framing timber lot 5-1",
-        page: 5,
-        error: { code: "UNVERIFIABLE_VALUE", message: "This row appears on a summary page, so it was not counted as a delivery item." },
-      }],
+      notes: [
+        { value: "Framing timber lot 5-1", page: 5, error: { code: "UNVERIFIABLE_VALUE", message: "This row appears on a summary page, so it was not counted as a delivery item." } },
+        { value: "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice.", page: 5 },
+        { value: "Framing timber lot 4-1", page: 4, error: { code: "OCR_REQUIRES_VERIFICATION", message: "OCR found this item row." } },
+      ],
       items: [],
     };
     database.db.update(documents).set({ status: "completed", resultJson: JSON.stringify(oldResult) }).where(eq(documents.id, id)).run();
@@ -179,7 +179,7 @@ describe("document API", () => {
   });
 
   test.skipIf(!sampleAvailable)("uploads all supplied PDFs and returns page-scoped items through the API", async () => {
-    const expected = { "KBS-10234": 5, "KBS-10241": 4, "KBS-10255": 4, "KBS-10262": 3, "KBS-10270": 4, "KBS-DR118": 24 };
+    const expected = { "KBS-10234": 5, "KBS-10241": 0, "KBS-10255": 4, "KBS-10262": 3, "KBS-10270": 4, "KBS-DR118": 21 };
     for (const [name, count] of Object.entries(expected)) {
       const bytes = await readFile(resolve(import.meta.dir, `../../../../data/${name}.pdf`));
       const response = await upload(new File([new Uint8Array(bytes).buffer as ArrayBuffer], `${name}.pdf`, { type: "application/pdf" }));
@@ -192,10 +192,11 @@ describe("document API", () => {
       expect(completed.items).toHaveLength(count);
       if (name === "KBS-DR118") {
         expect(completed.pageCount).toBe(8);
-        expect(Array.from({ length: 8 }, (_, page) => completed.items.filter((item) => item.evidence.page === page + 1).length)).toEqual(Array(8).fill(3));
-        expect(completed.items.filter((item) => item.error).map((item) => item.evidence.page)).toEqual([4, 4, 4]);
+        expect(Array.from({ length: 8 }, (_, page) => completed.items.filter((item) => item.evidence.page === page + 1).length)).toEqual([3, 3, 3, 0, 3, 3, 3, 3]);
+        expect(completed.notes.some((note) => "page" in note && note.page === 4 && note.error?.code === "UNREADABLE_CONTENT")).toBe(true);
       }
-      if (name === "KBS-10241" || name === "KBS-10255") expect(completed.items.every((item) => item.error)).toBe(true);
+      if (name === "KBS-10241") expect(completed.notes.some((note) => "page" in note && note.page === 1 && note.error?.code === "UNREADABLE_CONTENT")).toBe(true);
+      if (name === "KBS-10255") expect(completed.items.every((item) => item.error)).toBe(true);
     }
   }, 90_000);
 });

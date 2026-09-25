@@ -161,37 +161,6 @@ export function classifyRows(rows: PdfRow[]): Classification {
   return { items, tableLines };
 }
 
-export function classifyOcrRows(rows: PdfRow[]): Classification {
-  const header = rows.find((row) => row.tokens.some((token) => /^item$/i.test(clean(token))) && row.tokens.some((token) => /^description$/i.test(clean(token))));
-  if (!header) {
-    const fallback = classifyRows(rows);
-    return {
-      items: fallback.items.map((item) => ({
-        ...item,
-        error: { code: "OCR_REQUIRES_VERIFICATION", message: "OCR found this numbered row, but its item columns could not be identified safely." },
-      })),
-      tableLines: fallback.tableLines,
-    };
-  }
-  const itemStart = header.tokens.find((token) => /^item$/i.test(clean(token)))!.x;
-  const quantityStart = header.tokens.find((token) => /^qty$/i.test(clean(token)))?.x ?? Infinity;
-  const items = rows.flatMap((row) => {
-    if (row.y >= header.y) return [];
-    const itemNumber = row.tokens[0];
-    if (!itemNumber || itemNumber.x > itemStart + 20 || !/^\d+[.)]?$/.test(clean(itemNumber))) return [];
-    const description = row.tokens.filter((token) => token.x > itemNumber.x && token.x < quantityStart).map(clean).join(" ");
-    const message = description
-      ? "OCR found this item row, but its quantities and prices could not be verified from selectable PDF text."
-      : "OCR found a numbered table row, but its description and numeric values could not be verified.";
-    return [{
-      ...(description ? { description } : {}),
-      evidence: rowEvidence(row),
-      error: { code: "OCR_REQUIRES_VERIFICATION", message },
-    }];
-  });
-  return { items, tableLines: new Set([header.lineNumber, ...items.map((item) => item.evidence.line!)]) };
-}
-
 export async function extractDocument(buffer: ArrayBuffer): Promise<{ pageCount: number; items: ExtractedItem[] } & Details> {
   const pages = await extractPdfPages(buffer);
   const items: ExtractedItem[] = [];
@@ -200,17 +169,6 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ pageCount:
 
   for (const page of pages) {
     const printable = page.items.filter((token) => clean(token) !== "");
-    if (page.ocr) {
-      const rows = groupIntoRows(page.pageNumber, printable, 1);
-      const result = classifyOcrRows(rows);
-      detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
-      if (result.items.length) items.push(...result.items);
-      else {
-        const message = "This page has no readable item rows, so its contents could not be checked.";
-        notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
-      }
-      continue;
-    }
     if (page.error || printable.length === 0) {
       const message = "This page has no readable text, so its contents could not be checked.";
       notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
