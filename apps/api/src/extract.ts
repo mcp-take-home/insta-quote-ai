@@ -183,7 +183,25 @@ export function classifyRows(rows: PdfRow[]): Classification {
   return { items, tableLines, ...(total ? { total } : {}) };
 }
 
-const excludedPage = /\b(summary|returns? note|credit adjustment|signed acceptance|acceptance)\b/i;
+function classifyOcrRows(rows: PdfRow[]): ExtractedItem[] {
+  const header = rows.find((row) => row.tokens.some((token) => /^item$/i.test(clean(token))) && row.tokens.some((token) => /^description$/i.test(clean(token))));
+  if (!header) return [];
+  const itemStart = header.tokens.find((token) => /^item$/i.test(clean(token)))!.x;
+  const quantityStart = header.tokens.find((token) => /^qty$/i.test(clean(token)))?.x ?? Infinity;
+  return rows.flatMap((row) => {
+    if (row.y >= header.y) return [];
+    const itemNumber = row.tokens[0];
+    if (!itemNumber || itemNumber.x > itemStart + 20 || !/^\d+[.)]?$/.test(clean(itemNumber))) return [];
+    const description = row.tokens.filter((token) => token.x > itemNumber.x && token.x < quantityStart).map(clean).join(" ");
+    if (!description) return [];
+    const message = "OCR found this item row, but its quantities and prices could not be verified from selectable PDF text.";
+    return [{
+      description,
+      evidence: rowEvidence(row),
+      error: { code: "OCR_REQUIRES_VERIFICATION", message },
+    }];
+  });
+}
 
 export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: ExtractedItem[] } & Details> {
   const pages = await extractPdfPages(buffer);
@@ -195,6 +213,16 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
 
   for (const page of pages) {
     const printable = page.items.filter((token) => clean(token) !== "");
+    if (page.ocr) {
+      const rows = groupIntoRows(page.pageNumber, printable, 1);
+      const ocrItems = classifyOcrRows(rows);
+      if (ocrItems.length) items.push(...ocrItems);
+      else {
+        const message = "This page has no readable item rows, so its contents could not be checked.";
+        notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
+      }
+      continue;
+    }
     if (page.error || printable.length === 0) {
       const message = "This page has no readable text, so its contents could not be checked.";
       notes.push({ value: message, page: page.pageNumber, error: { code: "UNREADABLE_CONTENT", message } });
@@ -208,29 +236,6 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
     }
     const text = rows.map(context).join(" ");
     readablePageText.push({ pageNumber: page.pageNumber, text });
-    const heading = rows.slice(0, 6).map(context).join(" ");
-    if (excludedPage.test(heading)) {
-      const result = classifyRows(rows);
-      detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
-      const pageType = /summary/i.test(heading) ? "summary" : "returns, credit, or acceptance";
-      const rowMessage = pageType === "summary"
-        ? "This row appears on a summary page, so it was not counted as a delivery item."
-        : "This row appears on a returns, credit, or acceptance page, so it was not counted as a delivery item.";
-      if (result.items.length) {
-        notes.push(...result.items.map((item) => ({
-          value: item.description ?? rowMessage,
-          evidence: item.evidence,
-          error: { code: "UNVERIFIABLE_VALUE", message: rowMessage },
-        })));
-      } else {
-        const message = /summary/i.test(heading)
-          ? "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice."
-          : "This returns, credit, or acceptance page repeats delivery lines in a different context, so its rows were skipped to avoid counting them as new items.";
-        const sourceRow = rows.slice(0, 6).find((row) => excludedPage.test(context(row)));
-        notes.push({ value: message, page: page.pageNumber, ...(sourceRow ? { line: sourceRow.lineNumber } : {}), sourceText: sourceRow ? context(sourceRow) : heading, error: { code: "UNVERIFIABLE_VALUE", message } });
-      }
-      continue;
-    }
     const result = classifyRows(rows);
     detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
     items.push(...result.items);

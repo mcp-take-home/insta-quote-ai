@@ -139,6 +139,7 @@ const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(
 test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and reports document contradictions", async () => {
   const parsedSamples = await Promise.all(sampleNames.map(async (name, index) => DocumentResponseSchema.parse({ id: `sample-${index}`, status: "completed", ...await extractDocument(await sample(name).arrayBuffer()) })));
   expect(parsedSamples).toHaveLength(6);
+  expect(parsedSamples[0]?.items).toHaveLength(5);
   const result = await extractDocument(await sample("KBS-10270").arrayBuffer());
   expect(result.items).toHaveLength(4);
   expect(result.details).toMatchObject({ "Document No": [{ value: "KBS-10270", evidence: { page: 1, line: 3 } }], "Delivered to": [{ value: "Site 6, Matai Grove" }], "Ordered by": [{ value: "S. Prasad" }] });
@@ -147,8 +148,11 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
   expect(result.notes.some((note) => note.error?.code === "ARITHMETIC_CONTRADICTION" && note.page === 1)).toBe(true);
 
   const unreadable = await extractDocument(await sample("KBS-10241").arrayBuffer());
-  expect(unreadable.items).toHaveLength(0);
-  expect(unreadable.notes[0]).toMatchObject({ error: { code: "UNREADABLE_CONTENT" }, page: 1 });
+  expect(unreadable.items).toHaveLength(4);
+  expect(unreadable.items.every((item) => item.evidence.page === 1 && item.error && !item.quantity && !item.unitPrice && !item.lineTotal)).toBe(true);
+  expect(unreadable.items.map((item) => item.description)).toEqual([
+    "Timber H3.2 90x45 framing 4.8m", "Timber H3.2 140x45 framing 4.8m", "Joist hangers 140mm galv", "Nail plates 100x100 galv",
+  ]);
 
   const noTotals = await extractDocument(await sample("KBS-10255").arrayBuffer());
   expect(noTotals.items).toHaveLength(4);
@@ -160,18 +164,13 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
   expect(palletConflict.notes.find((note) => note.error?.code === "CONFLICTING_VALUES")).toMatchObject({ page: 1, lines: [7, 13] });
 
   const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
-  expect(deliveryRun.items).toHaveLength(9);
-  const acceptedRunItems = deliveryRun.items.filter((item) => item.evidence.page <= 3);
-  expect(acceptedRunItems).toHaveLength(9);
-  const refusedRunNotes = deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE");
-  expect(refusedRunNotes).toHaveLength(12);
-  expect(refusedRunNotes.map(({ value, evidence }) => [evidence?.page, evidence?.line, value, evidence?.sourceText])).toEqual([
-    [5, 7, "Framing timber lot 5-1", "Framing timber lot 5-1"], [5, 8, "Framing timber lot 5-2", "Framing timber lot 5-2"], [5, 9, "Framing timber lot 5-3", "Framing timber lot 5-3"],
-    [6, 7, "Framing timber lot 6-1", "Framing timber lot 6-1"], [6, 8, "Framing timber lot 6-2", "Framing timber lot 6-2"], [6, 9, "Framing timber lot 6-3", "Framing timber lot 6-3"],
-    [7, 7, "Framing timber lot 7-1", "Framing timber lot 7-1"], [7, 8, "Framing timber lot 7-2", "Framing timber lot 7-2"], [7, 9, "Framing timber lot 7-3", "Framing timber lot 7-3"],
-    [8, 7, "Framing timber lot 8-1", "Framing timber lot 8-1"], [8, 8, "Framing timber lot 8-2", "Framing timber lot 8-2"], [8, 9, "Framing timber lot 8-3", "Framing timber lot 8-3"],
+  expect(deliveryRun.items).toHaveLength(24);
+  expect(Object.fromEntries(Array.from({ length: 8 }, (_, index) => [index + 1, deliveryRun.items.filter((item) => item.evidence.page === index + 1).length]))).toEqual({ 1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3 });
+  const ocrItems = [...unreadable.items, ...deliveryRun.items.filter((item) => item.evidence.page === 4)];
+  expect(ocrItems.every((item) => item.error && !item.quantity && !item.unitPrice && !item.lineTotal)).toBe(true);
+  expect(deliveryRun.items.filter((item) => item.evidence.page === 4).map((item) => item.description)).toEqual([
+    "Framing timber lot 4-1", "Framing timber lot 4-2", "Framing timber lot 4-3",
   ]);
-  expect(refusedRunNotes.every((note) => note.error?.message && note.error.message.length > 0)).toBe(true);
   expect(deliveryRun.notes).toContainEqual(expect.objectContaining({ value: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave", evidence: { page: 1, line: 2, sourceText: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave" } }));
   expect(deliveryRun.details["Document No"]).toMatchObject([{ value: "KBS-DR118", evidence: { page: 1, line: 3 } }]);
   expect(deliveryRun.details.Date).toMatchObject([{ value: "24 August 2026", evidence: { page: 1, line: 4 } }]);
@@ -181,10 +180,10 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
   expect(deliveryRun.notes.filter((note) => /^Page \d+ of \d+$/.test(note.value))).toHaveLength(0);
   expect(deliveryRun.notes.map((note) => note.value)).toContain("Multi-Site Delivery Run 118 - Site 2 of 4 - Ranfurly Ave");
   expect(deliveryRun.notes.map((note) => note.value)).toContain("Multi-Site Delivery Run 118 - Site 3 of 4 - Beach Road");
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE").some((note) => note.line === 2)).toBe(false);
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toMatchObject([{ page: 4 }]);
-  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE")).toHaveLength(12);
-});
+
+  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toHaveLength(0);
+  expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE" && /summary|returns|credit|acceptance/i.test(note.value))).toHaveLength(0);
+}, 30_000);
 
 test.skipIf(!sampleDataAvailable)("extractPdfPages loads installed standard fonts without warnings", async () => {
   const fontWarnings: string[] = [];

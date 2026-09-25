@@ -10,10 +10,13 @@
   },
   "dependencies": {
     "@insta-quote/shared": "workspace:*",
+    "@napi-rs/canvas": "^1.0.9",
     "@scalar/hono-api-reference": "^0.12.5",
+    "@tesseract.js-data/eng": "^1.0.0",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.9",
-    "pdfjs-dist": "^6.3.289"
+    "pdfjs-dist": "^6.3.289",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.11"
