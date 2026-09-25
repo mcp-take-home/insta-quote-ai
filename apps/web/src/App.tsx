@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, Route, Routes, useNavigate, useParams } from 'react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createClient } from '@nghien-ot/rux'
@@ -219,6 +219,8 @@ function PageGroupedItems({ document }: { document: CompletedDocument }) {
 
 function DocumentPage() {
   const { id = '' } = useParams()
+  const [activeTab, setActiveTab] = useState<'items' | 'json'>('items')
+  const [copyStatus, setCopyStatus] = useState('')
   const document = useQuery({
     queryKey: ['document', id],
     queryFn: () => getDocument(id),
@@ -229,6 +231,41 @@ function DocumentPage() {
     },
     retry: false,
   })
+  const completed = document.data?.status === 'completed' ? document.data : undefined
+  const jsonText = completed ? JSON.stringify(completed, null, 2) : ''
+
+  async function copyJson() {
+    try {
+      await navigator.clipboard.writeText(jsonText)
+      setCopyStatus('JSON copied.')
+    } catch {
+      setCopyStatus('Could not copy JSON. Select and copy it from this panel.')
+    }
+  }
+
+  function downloadJson() {
+    const url = URL.createObjectURL(new Blob([jsonText], { type: 'application/json' }))
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = `document-${id}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const tabs = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])
+    const currentIndex = tabs.indexOf(event.currentTarget)
+    const nextIndex = event.key === 'Home' ? 0
+      : event.key === 'End' ? tabs.length - 1
+        : event.key === 'ArrowRight' ? (currentIndex + 1) % tabs.length
+          : event.key === 'ArrowLeft' ? (currentIndex - 1 + tabs.length) % tabs.length
+            : -1
+    if (nextIndex < 0) return
+    event.preventDefault()
+    const nextTab = tabs[nextIndex]
+    setActiveTab(nextTab.id === 'items-tab' ? 'items' : 'json')
+    nextTab.focus()
+  }
 
   return (
     <main className="page result-page">
@@ -246,10 +283,24 @@ function DocumentPage() {
       {document.data?.status === 'failed' && (
         <div className="error-panel" role="alert"><h2>Processing could not be completed</h2><p>{document.data.error.message}</p></div>
       )}
-      {document.data?.status === 'completed' && (
+      {completed && (
         <>
           <p className="complete-note" role="status">Review complete. Extracted items and page details are listed below.</p>
-          <PageGroupedItems document={document.data} />
+          <div className="result-tabs" role="tablist" aria-label="Document result">
+            <button type="button" id="items-tab" role="tab" aria-selected={activeTab === 'items'} aria-controls="items-panel" tabIndex={activeTab === 'items' ? 0 : -1} onClick={() => setActiveTab('items')} onKeyDown={handleTabKeyDown}>Extracted items</button>
+            <button type="button" id="json-tab" role="tab" aria-selected={activeTab === 'json'} aria-controls="json-panel" tabIndex={activeTab === 'json' ? 0 : -1} onClick={() => setActiveTab('json')} onKeyDown={handleTabKeyDown}>JSON response</button>
+          </div>
+          <section id="items-panel" role="tabpanel" aria-labelledby="items-tab" tabIndex={0} hidden={activeTab !== 'items'}>
+            <PageGroupedItems document={completed} />
+          </section>
+          <section id="json-panel" role="tabpanel" aria-labelledby="json-tab" tabIndex={0} hidden={activeTab !== 'json'}>
+            <div className="json-actions">
+              <button type="button" onClick={copyJson}>Copy JSON</button>
+              <button type="button" onClick={downloadJson}>Download JSON</button>
+            </div>
+            <p className="sr-only" role="status" aria-live="polite">{copyStatus}</p>
+            <pre className="json-response"><code>{jsonText}</code></pre>
+          </section>
         </>
       )}
     </main>
