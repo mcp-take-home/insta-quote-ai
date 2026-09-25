@@ -287,16 +287,28 @@ function DocumentPage() {
         <>
           <p className="complete-note" role="status">Review complete. Extracted items and page details are listed below.</p>
           <div className="result-tabs" role="tablist" aria-label="Document result">
-            <button type="button" id="items-tab" role="tab" aria-selected={activeTab === 'items'} aria-controls="items-panel" tabIndex={activeTab === 'items' ? 0 : -1} onClick={() => setActiveTab('items')} onKeyDown={handleTabKeyDown}>Extracted items</button>
-            <button type="button" id="json-tab" role="tab" aria-selected={activeTab === 'json'} aria-controls="json-panel" tabIndex={activeTab === 'json' ? 0 : -1} onClick={() => setActiveTab('json')} onKeyDown={handleTabKeyDown}>JSON response</button>
+            <button type="button" id="items-tab" role="tab" aria-selected={activeTab === 'items'} aria-controls="items-panel" tabIndex={activeTab === 'items' ? 0 : -1} onClick={() => setActiveTab('items')} onKeyDown={handleTabKeyDown}>
+              <svg className="control-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="m2.5 3.5 1 1 1.5-1.5M7 3.5h6.5m-11 4 1 1L5 7m2 1h6.5m-11 4 1 1L5 11.5m2 0h6.5" /></svg>
+              <span>Extracted items</span>
+            </button>
+            <button type="button" id="json-tab" role="tab" aria-selected={activeTab === 'json'} aria-controls="json-panel" tabIndex={activeTab === 'json' ? 0 : -1} onClick={() => setActiveTab('json')} onKeyDown={handleTabKeyDown}>
+              <svg className="control-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M6 2.5H5A1.5 1.5 0 0 0 3.5 4v2A2.5 2.5 0 0 1 2 8a2.5 2.5 0 0 1 1.5 2v2A1.5 1.5 0 0 0 5 13.5h1m4-11h1A1.5 1.5 0 0 1 12.5 4v2A2.5 2.5 0 0 0 14 8a2.5 2.5 0 0 0-1.5 2v2a1.5 1.5 0 0 1-1.5 1.5h-1" /></svg>
+              <span>JSON response</span>
+            </button>
           </div>
           <section id="items-panel" role="tabpanel" aria-labelledby="items-tab" tabIndex={0} hidden={activeTab !== 'items'}>
             <PageGroupedItems document={completed} />
           </section>
           <section id="json-panel" role="tabpanel" aria-labelledby="json-tab" tabIndex={0} hidden={activeTab !== 'json'}>
             <div className="json-actions">
-              <button type="button" onClick={copyJson}>Copy JSON</button>
-              <button type="button" onClick={downloadJson}>Download JSON</button>
+              <button type="button" onClick={copyJson}>
+                <svg className="control-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="8" height="9" rx="1.25" /><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v7A1.5 1.5 0 0 0 4 12.5h1.5" /></svg>
+                <span>Copy JSON</span>
+              </button>
+              <button type="button" onClick={downloadJson}>
+                <svg className="control-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5v1A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-1" /></svg>
+                <span>Download JSON</span>
+              </button>
             </div>
             <p className="sr-only" role="status" aria-live="polite">{copyStatus}</p>
             <pre className="json-response"><code>{jsonText}</code></pre>

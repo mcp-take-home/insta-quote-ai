@@ -31,6 +31,16 @@ Both panels remain mounted and switch with the native `hidden` attribute. Only t
 - `bun run --filter web lint` — passed (exit code 0).
 - `bun run build` — passed (web build completed; 2 tasks successful).
 - Browser export verification was unavailable: no browser was connected in this subagent session. The earlier local browser attempt also could not assign the sample PDF because file chooser permission was denied, so there was no completed result to test.
+
+## Icon follow-up
+
+- Added 16px inline line icons to both tabs and both JSON actions. SVGs use `currentColor`, are `aria-hidden`, and leave the visible button labels unchanged.
+- `bun run check` — passed (3 tasks successful).
+- `bun run --filter web lint` — passed (exit code 0).
+- `bun run build` — passed (web build completed; 2 tasks successful).
+- Browser smoke was unavailable: no browser was connected in this session.
+- `git diff --check` — passed.
+
 ## Commit
 
-The implementation and review follow-up are committed on `fix/page-grouped-24-items`; see the task handoff for the follow-up commit hash.
+The implementation, review fix, and icon follow-up are committed on `fix/page-grouped-24-items`; see the task handoff for the latest commit hash.

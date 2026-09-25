@@ -167,6 +167,9 @@ input[type='file']::file-selector-button {
 
 .result-tabs button,
 .json-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 9px 12px;
   border: 1px solid #c7d4cd;
   border-radius: 7px;
@@ -175,6 +178,12 @@ input[type='file']::file-selector-button {
   font: inherit;
   font-size: 14px;
   cursor: pointer;
+}
+
+.control-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
 
 .result-tabs button[aria-selected='true'] {
