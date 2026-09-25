@@ -31,14 +31,24 @@
 
 ### Task 2: Repeated metadata and sample audit
 
-**Files:** Modify `apps/api/src/extract.ts`; test `apps/api/src/extract.test.ts`.
+**Files:** Modify `apps/api/src/extract.ts`, `README.md`, `docs/design.md`, `docs/implementation-plan.md`; test `apps/api/src/extract.test.ts`.
 
 **Interface:** `extractDetails(pages)` retains `{details, notes}`.
 
 - [ ] Add failing `KBS-DR118` assertion: `Document No: KBS-DR118` and date appear once, company heading appears once, page counters do not appear in notes; distinct site headings remain. All six sample results parse with `DocumentResponseSchema`; document-specific refusal behavior remains.
 - [ ] Run focused test; record failing result.
 - [ ] In `extractDetails`, retain first evidence for identical label/value pairs and identical plain note text. Skip page-counter-only lines. Do not collapse distinct labels, values, or error notes.
-- [ ] Run focused test, full `bun test`, `bun run check`, `bun run build`, and web lint; record results; commit.
+- [ ] Update existing docs that claim repeated labels retain all values or excluded rows are only skipped. Run focused test, full `bun test`, `bun run check`, `bun run build`, and web lint; record results; commit.
+
+### Task 3: PDF.js standard font data
+
+**Files:** Modify `apps/api/src/pdf.ts`; test `apps/api/src/extract.test.ts`.
+
+**Interface:** `extractPdfPages(buffer)` keeps same output. `pdfjs-dist` remains installed dependency.
+
+- [ ] Reproduce `standardFontDataUrl` warnings when running extraction on the supplied PDFs; record baseline output.
+- [ ] Supply PDF.js its installed `standard_fonts/` path through `getDocument` configuration. Resolve package location at runtime and keep path valid when API is built; use filesystem path with trailing slash, since installed Node font loader calls `fs.readFile` on it. Do not suppress warnings or add dependency.
+- [ ] Run all six samples and verify text extraction is unchanged and font warnings disappear. Run focused test, `bun run check`, and API build; record results; commit.
 
 ### Review
 
