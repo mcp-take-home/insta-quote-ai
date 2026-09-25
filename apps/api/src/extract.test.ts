@@ -139,7 +139,7 @@ const sampleDataAvailable = (await Promise.all(sampleNames.map((name) => sample(
 test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and reports document contradictions", async () => {
   const parsedSamples = await Promise.all(sampleNames.map(async (name, index) => DocumentResponseSchema.parse({ id: `sample-${index}`, status: "completed", ...await extractDocument(await sample(name).arrayBuffer()) })));
   expect(parsedSamples).toHaveLength(6);
-  expect(parsedSamples[0]?.items).toHaveLength(5);
+  expect(parsedSamples[0]?.status === "completed" ? parsedSamples[0].items : []).toHaveLength(5);
   const result = await extractDocument(await sample("KBS-10270").arrayBuffer());
   expect(result.items).toHaveLength(4);
   expect(result.details).toMatchObject({ "Document No": [{ value: "KBS-10270", evidence: { page: 1, line: 3 } }], "Delivered to": [{ value: "Site 6, Matai Grove" }], "Ordered by": [{ value: "S. Prasad" }] });

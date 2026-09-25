@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun --external pdfjs-dist --external tesseract.js --external @napi-rs/canvas --external @tesseract.js-data/eng",
     "check": "tsc --noEmit",
     "test": "bun test"
   },
