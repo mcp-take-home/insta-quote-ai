@@ -21,7 +21,7 @@ Open [http://localhost:5173](http://localhost:5173). The API listens on port 300
 
 ## How it works
 
-`PDF upload → local file → SQLite document queue → background worker → positioned PDF text parsing → evidence and error checks → persisted result → browser polling`
+`PDF upload → local file → SQLite document queue → background worker → positioned PDF text parsing or local OCR → evidence and error checks → persisted result → browser polling`
 
 The upload endpoint saves the file and queued record, then returns `202` without parsing it in the request. A worker in the API process claims queued records through Drizzle, reads each PDF, and persists either a completed result or a processing failure. The web app polls the document endpoint about once a second and stops when it reaches a terminal state. Document labels become keys in `details`; identical label/value pairs and plain note text keep their first sourced occurrence, while distinct values remain. Page counters are omitted. Every page is checked for item tables, including summary, returns, credit, and acceptance pages. Textless pages use local OCR to identify rows; OCR-derived numbers stay untrusted and the rows appear as errors for review. Errors remain on their item or note, without a separate refusal list. The result view groups items and page-located notes by source page, while document-wide notes stay with document details. Page and line references use 1-based numbering; a line is one reconstructed visible text row on that PDF page, including separator rows.
 
@@ -33,7 +33,7 @@ The hardest decision was where to draw the extraction boundary. I chose determin
 
 ## Where I am not confident
 
-The parser expects a recognizable `Item / Description / Qty / Unit Price` table with a line total column. It uses token positions and a small row-coordinate tolerance, so unusual column layouts, overlapping or malformed text, and wrapped multi-line descriptions can be misclassified or marked uncertain. Local OCR is used only on pages without a text layer, to identify rows; OCR values are refused for review rather than trusted. The supplied sample API integration test skips when `../data/KBS-10270.pdf` is unavailable. I verified the provided KBS-10270 example in the UI; that does not establish accuracy on other suppliers' layouts.
+The parser expects a recognizable `Item / Description / Qty / Unit Price` table with a line total column. It uses token positions and a small row-coordinate tolerance, so unusual column layouts, overlapping or malformed text, and wrapped multi-line descriptions can be misclassified or marked uncertain. Local OCR is used only on pages without a text layer, to identify rows; OCR values are refused for review rather than trusted. API integration tests cover all six supplied PDFs when sample data is available. Browser smoke covered KBS-DR118 and KBS-10255; this does not establish accuracy on other suppliers' layouts.
 
 ## With three more days
 
