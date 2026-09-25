@@ -157,7 +157,12 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
   expect(palletConflict.notes.find((note) => note.error?.code === "CONFLICTING_VALUES")).toMatchObject({ page: 1, lines: [7, 13] });
 
   const deliveryRun = await extractDocument(await sample("KBS-DR118").arrayBuffer());
-  expect(deliveryRun.items).toHaveLength(9);
+  expect(deliveryRun.items).toHaveLength(21);
+  const acceptedRunItems = deliveryRun.items.filter((item) => item.evidence.page <= 3);
+  const refusedRunItems = deliveryRun.items.filter((item) => item.evidence.page >= 5 && item.evidence.page <= 8);
+  expect(acceptedRunItems).toHaveLength(9);
+  expect(refusedRunItems).toHaveLength(12);
+  expect(refusedRunItems.every((item) => item.description && item.evidence.line && item.evidence.sourceText && item.error?.message && !item.quantity && !item.unitPrice && !item.lineTotal)).toBe(true);
   expect(deliveryRun.notes).toContainEqual(expect.objectContaining({ value: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave", evidence: { page: 1, line: 2, sourceText: "Multi-Site Delivery Run 118 - Site 1 of 4 - Ranfurly Ave" } }));
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE").every((note) => note.line === 2)).toBe(true);
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE").every((note) => note.sourceText?.startsWith("Multi-Site Delivery Run"))).toBe(true);

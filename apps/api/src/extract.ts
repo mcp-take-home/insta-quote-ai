@@ -196,7 +196,13 @@ export async function extractDocument(buffer: ArrayBuffer): Promise<{ items: Ext
     readablePageText.push({ pageNumber: page.pageNumber, text });
     const heading = rows.slice(0, 6).map(context).join(" ");
     if (excludedPage.test(heading)) {
-      detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: classifyRows(rows).tableLines });
+      const result = classifyRows(rows);
+      detailPages.push({ pageNumber: page.pageNumber, rows, tableLines: result.tableLines });
+      const pageType = /summary/i.test(heading) ? "summary" : "returns, credit, or acceptance";
+      const itemMessage = pageType === "summary"
+        ? "This item appears on a summary page, so its values were not accepted to avoid counting the same delivery twice."
+        : "This item appears on a returns, credit, or acceptance page, so its values were not accepted as new delivery items.";
+      items.push(...result.items.map((item) => ({ ...(item.description ? { description: item.description } : {}), evidence: item.evidence, error: { code: "UNVERIFIABLE_VALUE" as const, message: itemMessage } })));
       const message = /summary/i.test(heading)
         ? "This summary page repeats delivery information, so its rows were skipped to avoid counting the same items twice."
         : "This returns, credit, or acceptance page repeats delivery lines in a different context, so its rows were skipped to avoid counting them as new items.";
