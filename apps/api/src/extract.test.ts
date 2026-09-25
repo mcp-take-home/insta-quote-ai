@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { classifyRows, documentTotalContradicts, extractDetails, extractDocument, multiPageTotalNote } from "./extract";
 import { DocumentResponseSchema } from "@insta-quote/shared";
-import type { PdfRow } from "./pdf";
+import { extractPdfPages, type PdfRow } from "./pdf";
 
 function row(pageNumber: number, y: number, cells: Array<[number, string]>): PdfRow {
   return {
@@ -184,4 +184,23 @@ test.skipIf(!sampleDataAvailable)("extractDocument extracts dynamic details and 
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE").some((note) => note.line === 2)).toBe(false);
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNREADABLE_CONTENT")).toMatchObject([{ page: 4 }]);
   expect(deliveryRun.notes.filter((note) => note.error?.code === "UNVERIFIABLE_VALUE")).toHaveLength(12);
+});
+
+test.skipIf(!sampleDataAvailable)("extractPdfPages loads installed standard fonts without warnings", async () => {
+  const fontWarnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    if (args.some((value) => String(value).includes("standardFontDataUrl"))) fontWarnings.push(args.map(String).join(" "));
+    else originalWarn(...args);
+  };
+
+  try {
+    const pages = await extractPdfPages(await sample("KBS-10234").arrayBuffer());
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.items.some((item) => item.text.includes("KBS-10234"))).toBe(true);
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  expect(fontWarnings).toEqual([]);
 });

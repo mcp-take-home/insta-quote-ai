@@ -1,4 +1,7 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { fileURLToPath } from "node:url";
+
+const standardFontDataUrl = `${fileURLToPath(new URL("../../standard_fonts/", import.meta.resolve("pdfjs-dist/legacy/build/pdf.mjs")))}/`;
 
 export interface PdfTextItem {
   text: string;
@@ -18,7 +21,7 @@ export type PdfRow = {
 export type PdfPage = { pageNumber: number; items: PdfTextItem[]; error?: string };
 
 export async function extractPdfPages(buffer: ArrayBuffer): Promise<PdfPage[]> {
-  const pdf = await getDocument({ data: new Uint8Array(buffer) }).promise;
+  const pdf = await getDocument({ data: new Uint8Array(buffer), standardFontDataUrl }).promise;
   const pages: PdfPage[] = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
