@@ -249,7 +249,7 @@ function DocumentPage() {
     link.href = url
     link.download = `document-${id}.json`
     link.click()
-    URL.revokeObjectURL(url)
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {

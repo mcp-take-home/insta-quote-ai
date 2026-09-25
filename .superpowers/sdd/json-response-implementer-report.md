@@ -24,7 +24,13 @@ Implemented Task 1 on branch `fix/page-grouped-24-items`. The completed-document
 
 Both panels remain mounted and switch with the native `hidden` attribute. Only the selected tab is in the tab order; arrow keys wrap between tabs, and Home/End select the first/last tab. The JSON text is rendered as selectable text and reused by both export handlers.
 
+## Review follow-up
+
+- Fixed the download lifecycle: Blob URL revocation now runs one second after `link.click()` so the browser can begin the download first.
+- `bun run check` — passed (3 tasks successful).
+- `bun run --filter web lint` — passed (exit code 0).
+- `bun run build` — passed (web build completed; 2 tasks successful).
+- Browser export verification was unavailable: no browser was connected in this subagent session. The earlier local browser attempt also could not assign the sample PDF because file chooser permission was denied, so there was no completed result to test.
 ## Commit
 
-The implementation is committed on `fix/page-grouped-24-items`; see the task handoff for the commit hash.
-
+The implementation and review follow-up are committed on `fix/page-grouped-24-items`; see the task handoff for the follow-up commit hash.
