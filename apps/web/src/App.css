@@ -239,6 +239,23 @@ input[type='file']::file-selector-button {
   letter-spacing: 0;
 }
 
+.page-group {
+  margin-top: 24px;
+}
+
+.page-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: #294e41;
+  font-size: 17px;
+}
+
+.page-notes {
+  margin-top: 12px;
+}
+
 .notes-list {
   display: grid;
   gap: 12px;

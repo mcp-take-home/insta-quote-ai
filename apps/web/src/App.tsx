@@ -74,7 +74,7 @@ function UploadPage() {
       <header className="brand"><span className="brand-mark" aria-hidden="true">IQ</span><span>Insta Quote AI</span></header>
       <section className="intro" aria-labelledby="upload-title">
         <h1 id="upload-title">Turn a quote PDF into clear line items.</h1>
-      <p className="lede">Upload a text based PDF. Every extracted number comes with its page and source text; uncertain values are clearly marked for review.</p>
+      <p className="lede">Upload a quote PDF. Every extracted number comes with its page and source text; scanned rows and other uncertain values are marked for review.</p>
       </section>
       <form className="upload-form" onSubmit={submit}>
         <label htmlFor="pdf-file">Choose a PDF</label>
@@ -145,6 +145,10 @@ function NotesList({ notes }: { notes: DocumentNote[] }) {
   ))}</ul>
 }
 
+function notePage(note: DocumentNote) {
+  return note.evidence?.page ?? note.page
+}
+
 function DocumentDetails({ details, notes }: Pick<CompletedDocument, 'details' | 'notes'>) {
   return (
     <section className="result-section document-details" aria-labelledby="details-title">
@@ -159,18 +163,18 @@ function DocumentDetails({ details, notes }: Pick<CompletedDocument, 'details' |
           ))}
         </dl>
       ) : <p className="empty-note">No document details were extracted.</p>}
-      <section className="notes" aria-labelledby="notes-title">
-        <h3 id="notes-title">Notes</h3>
-        {notes.length ? <NotesList notes={notes} /> : <p className="empty-note">No notes.</p>}
-      </section>
+      {notes.length > 0 && <section className="notes" aria-labelledby="notes-title">
+        <h3 id="notes-title">Document-wide notes</h3>
+        <NotesList notes={notes} />
+      </section>}
     </section>
   )
 }
 
-function ItemList({ items }: { items: CompletedDocument['items'] }) {
+function ItemList({ items, label = 'Extracted items' }: { items: CompletedDocument['items']; label?: string }) {
   if (!items.length) return <p className="empty-note">No line items were extracted.</p>
   return (
-    <div className="items-table-wrap" role="region" aria-label="Extracted items" tabIndex={0}>
+    <div className="items-table-wrap" role="region" aria-label={label} tabIndex={0}>
       <table className="items-table">
         <thead><tr><th scope="col">Description</th><th scope="col">Quantity</th><th scope="col">Unit price</th><th scope="col">Line total</th></tr></thead>
         <tbody>{items.map((item, index) => (
@@ -188,6 +192,27 @@ function ItemList({ items }: { items: CompletedDocument['items'] }) {
       </table>
     </div>
   )
+}
+
+function PageGroupedItems({ document }: { document: CompletedDocument }) {
+  const pages = Array.from(new Set([
+    ...document.items.map((item) => item.evidence.page),
+    ...document.notes.map(notePage).filter((page): page is number => page !== undefined),
+  ])).sort((a, b) => a - b)
+
+  return <section className="result-section" aria-labelledby="items-title">
+    <h2 id="items-title">Extracted items <span className="count">{document.items.length}</span></h2>
+    {pages.map((page) => {
+      const items = document.items.filter((item) => item.evidence.page === page)
+      const notes = document.notes.filter((note) => notePage(note) === page)
+      return <section className="page-group" key={page} aria-labelledby={`page-${page}-title`}>
+        <h3 id={`page-${page}-title`}>Page {page} <span className="count">{items.length} {items.length === 1 ? 'item' : 'items'}</span></h3>
+        {items.length ? <ItemList items={items} label={`Extracted items on page ${page}`} /> : <p className="empty-note">No line items on this page.</p>}
+        {notes.length > 0 && <section className="page-notes" aria-label={`Notes for page ${page}`}><NotesList notes={notes} /></section>}
+      </section>
+    })}
+    {pages.length === 0 && <ItemList items={[]} />}
+  </section>
 }
 
 function DocumentPage() {
@@ -222,11 +247,8 @@ function DocumentPage() {
       {document.data?.status === 'completed' && (
         <>
           <p className="complete-note" role="status">Review complete. Extracted items and document details are listed below.</p>
-          <DocumentDetails details={document.data.details} notes={document.data.notes} />
-          <section className="result-section" aria-labelledby="items-title">
-            <h2 id="items-title">Extracted items <span className="count">{document.data.items.length}</span></h2>
-            <ItemList items={document.data.items} />
-          </section>
+          <DocumentDetails details={document.data.details} notes={document.data.notes.filter((note) => notePage(note) === undefined)} />
+          <PageGroupedItems document={document.data} />
         </>
       )}
     </main>
